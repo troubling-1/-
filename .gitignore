@@ -1,0 +1,14 @@
+node_modules/
+.next/
+out/
+dist/
+.npm-cache/
+.pnpm-store/
+.vercel/
+*.log
+.env.local
+.env*.local
+tsconfig.tsbuildinfo
+delta-escort-local.zip
+.DS_Store
+Thumbs.db
