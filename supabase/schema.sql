@@ -1,15 +1,17 @@
 create extension if not exists "pgcrypto";
 
-create type user_role as enum ('player', 'escort', 'admin');
+create type user_role as enum ('customer', 'escort', 'admin');
 create type order_status as enum ('pending', 'accepted', 'in_progress', 'completed', 'cancelled');
 create type service_type as enum ('escort', 'evacuation', 'materials', 'rank', 'fun');
 create type withdraw_status as enum ('pending', 'approved', 'rejected', 'paid');
 
 create table if not exists public.users (
   id uuid primary key references auth.users(id) on delete cascade,
+  email text,
   nickname text not null check (char_length(nickname) between 1 and 30),
   avatar text,
-  role user_role not null default 'player',
+  role user_role not null default 'customer',
+  status text not null default 'active' check (status in ('active', 'banned')),
   phone text,
   created_at timestamptz not null default now()
 );
@@ -121,7 +123,7 @@ using (
   or public.is_admin()
 );
 
-create policy "players can create orders"
+create policy "customers can create orders"
 on public.orders for insert
 with check (user_id = auth.uid() or user_id is null);
 
@@ -144,7 +146,7 @@ create policy "reviews visible to everyone"
 on public.reviews for select
 using (true);
 
-create policy "players can create own reviews"
+create policy "customers can create own reviews"
 on public.reviews for insert
 with check (user_id = auth.uid());
 
@@ -172,8 +174,8 @@ security definer
 set search_path = public
 as $$
 begin
-  insert into public.users (id, nickname, role)
-  values (new.id, coalesce(new.raw_user_meta_data->>'nickname', split_part(new.email, '@', 1)), 'player')
+  insert into public.users (id, email, nickname, role)
+  values (new.id, new.email, coalesce(new.raw_user_meta_data->>'nickname', split_part(new.email, '@', 1)), 'customer')
   on conflict (id) do nothing;
   return new;
 end;

@@ -1,356 +1,204 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { RoleGate } from "@/components/site/role-gate";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import {
-  getLocalEscortApplications,
-  updateLocalEscortApplicationStatus,
-  type EscortApplication,
-} from "@/lib/local-escort-applications";
-import { getLocalOrders, updateLocalOrderStatus } from "@/lib/local-orders";
-import { getLocalReports, updateLocalReportStatus, type Report, type ReportStatus } from "@/lib/local-reports";
-import { escorts, services } from "@/lib/mock-data";
-import type { Order, OrderStatus, WithdrawStatus } from "@/lib/types";
+import { Textarea } from "@/components/ui/textarea";
+import { getCurrentAccessToken } from "@/lib/auth-client";
+import type { EscortApplication } from "@/lib/types";
 import { formatMoney } from "@/lib/utils";
 
-type AdminWithdraw = {
-  id: string;
-  escortName: string;
-  amount: number;
-  status: WithdrawStatus;
-};
-
-const withdrawStorageKey = "delta_escort_admin_withdraws";
-
-const statusText: Record<OrderStatus, string> = {
-  pending: "待接单",
-  accepted: "已接单",
-  in_progress: "进行中",
-  completed: "已完成",
-  cancelled: "已取消",
-};
-
-const applicationStatusText = {
-  pending: "待审核",
-  approved: "已通过",
-  rejected: "已驳回",
-};
-
-const withdrawStatusText: Record<WithdrawStatus, string> = {
+const statusText = {
   pending: "待审核",
   approved: "已通过",
   rejected: "已拒绝",
-  paid: "已打款",
 };
-
-const reportStatusText: Record<ReportStatus, string> = {
-  pending: "待处理",
-  resolved: "已处理",
-  rejected: "已驳回",
-};
-
-const defaultWithdraws: AdminWithdraw[] = [
-  { id: "withdraw-001", escortName: "夜枭", amount: 300, status: "pending" },
-  { id: "withdraw-002", escortName: "灰烬", amount: 128, status: "approved" },
-];
-
-function readJsonList<T>(key: string, fallback: T[]) {
-  if (typeof window === "undefined") {
-    return fallback;
-  }
-
-  try {
-    const rawValue = window.localStorage.getItem(key);
-    if (!rawValue) {
-      return fallback;
-    }
-
-    const parsedValue = JSON.parse(rawValue);
-    return Array.isArray(parsedValue) ? (parsedValue as T[]) : fallback;
-  } catch {
-    return fallback;
-  }
-}
-
-function saveJsonList<T>(key: string, value: T[]) {
-  window.localStorage.setItem(key, JSON.stringify(value));
-}
-
-function getStatusTone(status: OrderStatus | WithdrawStatus | EscortApplication["status"] | ReportStatus) {
-  if (status === "completed" || status === "approved" || status === "paid" || status === "resolved") {
-    return "success";
-  }
-
-  if (status === "accepted" || status === "in_progress" || status === "pending") {
-    return "warning";
-  }
-
-  return "muted";
-}
 
 export default function AdminPage() {
-  const [orderList, setOrderList] = useState<Order[]>([]);
+  return (
+    <RoleGate allowedRoles={["admin"]}>
+      <AdminContent />
+    </RoleGate>
+  );
+}
+
+function AdminContent() {
   const [applications, setApplications] = useState<EscortApplication[]>([]);
-  const [withdraws, setWithdraws] = useState<AdminWithdraw[]>([]);
-  const [reports, setReports] = useState<Report[]>([]);
+  const [rejectReasons, setRejectReasons] = useState<Record<string, string>>({});
+  const [message, setMessage] = useState("");
+  const [isLoading, setIsLoading] = useState(true);
 
-  function syncOrders() {
-    setOrderList(getLocalOrders());
-  }
+  const pendingApplications = useMemo(() => applications.filter((item) => item.status === "pending"), [applications]);
 
-  function syncApplications() {
-    setApplications(getLocalEscortApplications());
-  }
+  async function loadApplications() {
+    setMessage("");
+    const token = await getCurrentAccessToken();
 
-  function syncReports() {
-    setReports(getLocalReports());
+    if (!token) {
+      setMessage("请先登录管理员账号。");
+      setIsLoading(false);
+      return;
+    }
+
+    const response = await fetch("/api/admin/escort-applications", {
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+    });
+
+    const result = await response.json();
+
+    if (!response.ok) {
+      setMessage(result.error || "读取护航师申请失败。");
+      setIsLoading(false);
+      return;
+    }
+
+    setApplications(result.data || []);
+    setIsLoading(false);
   }
 
   useEffect(() => {
-    setWithdraws(readJsonList(withdrawStorageKey, defaultWithdraws));
-    syncOrders();
-    syncApplications();
-    syncReports();
-
-    window.addEventListener("delta-escort-orders-change", syncOrders);
-    window.addEventListener("delta-escort-applications-change", syncApplications);
-    window.addEventListener("delta-escort-reports-change", syncReports);
-    window.addEventListener("storage", syncOrders);
-    window.addEventListener("storage", syncApplications);
-    window.addEventListener("storage", syncReports);
-
-    return () => {
-      window.removeEventListener("delta-escort-orders-change", syncOrders);
-      window.removeEventListener("delta-escort-applications-change", syncApplications);
-      window.removeEventListener("delta-escort-reports-change", syncReports);
-      window.removeEventListener("storage", syncOrders);
-      window.removeEventListener("storage", syncApplications);
-      window.removeEventListener("storage", syncReports);
-    };
+    loadApplications();
   }, []);
 
-  const statistics = useMemo(() => {
-    const orderAmount = orderList.reduce((sum, order) => sum + order.price, 0);
-    const pendingOrders = orderList.filter((order) => order.status === "pending").length;
-    const pendingApplications = applications.filter((application) => application.status === "pending").length;
-    const pendingWithdraws = withdraws.filter((withdraw) => withdraw.status === "pending").length;
-    const pendingReports = reports.filter((report) => report.status === "pending").length;
+  async function handleReview(applicationId: string, action: "approve" | "reject") {
+    setMessage("");
+    const token = await getCurrentAccessToken();
 
-    return {
-      userCount: 128,
-      escortCount: escorts.length + applications.filter((application) => application.status === "approved").length,
-      orderCount: orderList.length,
-      orderAmount,
-      pendingOrders,
-      pendingApplications,
-      pendingWithdraws,
-      pendingReports,
-    };
-  }, [applications, orderList, reports, withdraws]);
+    if (!token) {
+      setMessage("请先登录管理员账号。");
+      return;
+    }
 
-  function handleApplicationStatus(applicationId: string, status: EscortApplication["status"]) {
-    updateLocalEscortApplicationStatus(applicationId, status);
-    syncApplications();
-  }
+    const rejectReason = rejectReasons[applicationId]?.trim() || "";
 
-  function handleOrderStatus(orderId: string, status: OrderStatus) {
-    updateLocalOrderStatus(orderId, status);
-    syncOrders();
-  }
+    if (action === "reject" && rejectReason.length < 2) {
+      setMessage("拒绝申请时需要填写至少 2 个字的原因。");
+      return;
+    }
 
-  function handleWithdrawStatus(withdrawId: string, status: WithdrawStatus) {
-    const nextWithdraws = withdraws.map((withdraw) => (withdraw.id === withdrawId ? { ...withdraw, status } : withdraw));
-    setWithdraws(nextWithdraws);
-    saveJsonList(withdrawStorageKey, nextWithdraws);
-  }
+    const response = await fetch("/api/admin/escort-applications", {
+      method: "PATCH",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify({
+        id: applicationId,
+        action,
+        reject_reason: rejectReason,
+      }),
+    });
 
-  function handleReportStatus(reportId: string, status: ReportStatus) {
-    updateLocalReportStatus(reportId, status);
-    syncReports();
+    const result = await response.json();
+
+    if (!response.ok) {
+      setMessage(result.error || "审核失败。");
+      return;
+    }
+
+    setMessage(action === "approve" ? "已通过申请，用户角色已更新为护航师。" : "已拒绝申请。");
+    await loadApplications();
   }
 
   return (
     <div className="mx-auto max-w-7xl px-4 py-10">
       <div>
-        <h1 className="text-3xl font-bold">管理后台</h1>
-        <p className="mt-2 text-sm text-muted-foreground">审核护航师、管理订单、处理提现、查看举报和平台统计。</p>
+        <p className="text-sm text-primary">管理后台</p>
+        <h1 className="mt-2 text-3xl font-bold">护航师审核</h1>
+        <p className="mt-2 text-sm leading-6 text-muted-foreground">
+          只有管理员可以审核护航师入驻申请。通过后会更新用户角色为 escort，并创建或更新 escorts 资料。
+        </p>
       </div>
 
-      <div className="mt-6 grid gap-4 md:grid-cols-2 lg:grid-cols-4">
-        <Card>
-          <CardHeader>
-            <CardTitle>用户数</CardTitle>
-            <CardDescription>模拟注册用户</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <p className="text-2xl font-bold">{statistics.userCount}</p>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader>
-            <CardTitle>待处理</CardTitle>
-            <CardDescription>{statistics.pendingReports} 个举报待处理</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <p className="text-2xl font-bold">{statistics.pendingApplications + statistics.pendingReports}</p>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader>
-            <CardTitle>订单数</CardTitle>
-            <CardDescription>{statistics.pendingOrders} 个待接单</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <p className="text-2xl font-bold">{statistics.orderCount}</p>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader>
-            <CardTitle>成交额</CardTitle>
-            <CardDescription>{statistics.pendingWithdraws} 个提现待审核</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <p className="text-2xl font-bold text-primary">{formatMoney(statistics.orderAmount)}</p>
-          </CardContent>
-        </Card>
+      <div className="mt-6 grid gap-4 md:grid-cols-3">
+        <StatCard title="全部申请" value={applications.length} />
+        <StatCard title="待审核" value={pendingApplications.length} />
+        <StatCard title="已通过" value={applications.filter((item) => item.status === "approved").length} />
       </div>
+
+      {message ? <p className="mt-6 rounded-md border border-border bg-muted p-3 text-sm">{message}</p> : null}
 
       <Card className="mt-6">
         <CardHeader>
-          <CardTitle>举报管理</CardTitle>
-          <CardDescription>处理用户提交的订单和护航师举报。</CardDescription>
+          <CardTitle>申请列表</CardTitle>
+          <CardDescription>优先处理待审核申请。拒绝时必须填写原因，用户可在个人中心查看。</CardDescription>
         </CardHeader>
-        <CardContent className="grid gap-3">
-          {reports.length === 0 ? <p className="rounded-md border border-border bg-black/30 p-4 text-sm text-muted-foreground">暂无举报记录。</p> : null}
-          {reports.map((report) => (
-            <div key={report.id} className="grid gap-3 rounded-md border border-border bg-black/30 p-4 lg:grid-cols-[1fr_auto] lg:items-center">
-              <div>
-                <div className="flex flex-wrap items-center gap-2">
-                  <p className="font-medium">{report.target_type === "escort" ? "护航师举报" : "订单举报"}</p>
-                  <Badge tone={getStatusTone(report.status)}>{reportStatusText[report.status]}</Badge>
-                </div>
-                <p className="mt-2 text-sm text-muted-foreground">对象：{report.target_id}</p>
-                <p className="mt-1 text-sm text-muted-foreground">原因：{report.reason}</p>
-                <p className="mt-1 text-sm text-muted-foreground">说明：{report.detail}</p>
-              </div>
-              <div className="flex flex-wrap gap-2">
-                <Button type="button" size="sm" variant="outline" onClick={() => handleReportStatus(report.id, "resolved")}>
-                  标记已处理
-                </Button>
-                <Button type="button" size="sm" variant="danger" onClick={() => handleReportStatus(report.id, "rejected")}>
-                  驳回
-                </Button>
-              </div>
-            </div>
-          ))}
-        </CardContent>
-      </Card>
+        <CardContent className="grid gap-4">
+          {isLoading ? <p className="text-sm text-muted-foreground">正在加载申请...</p> : null}
+          {!isLoading && applications.length === 0 ? (
+            <p className="rounded-md border border-border bg-black/30 p-4 text-sm text-muted-foreground">暂无护航师申请。</p>
+          ) : null}
 
-      <Card className="mt-6">
-        <CardHeader>
-          <CardTitle>护航师入驻审核</CardTitle>
-          <CardDescription>审核用户提交的护航师入驻资料。</CardDescription>
-        </CardHeader>
-        <CardContent className="grid gap-3">
-          {applications.length === 0 ? <p className="rounded-md border border-border bg-black/30 p-4 text-sm text-muted-foreground">暂无入驻申请。</p> : null}
           {applications.map((application) => (
-            <div key={application.id} className="grid gap-3 rounded-md border border-border bg-black/30 p-4 lg:grid-cols-[1fr_auto] lg:items-center">
+            <div key={application.id} className="grid gap-4 rounded-md border border-border bg-black/30 p-4 lg:grid-cols-[1fr_320px]">
               <div>
                 <div className="flex flex-wrap items-center gap-2">
-                  <p className="font-medium">{application.nickname}</p>
-                  <Badge tone={getStatusTone(application.status)}>{applicationStatusText[application.status]}</Badge>
+                  <p className="font-bold">{application.nickname}</p>
+                  <Badge tone={application.status === "approved" ? "success" : application.status === "pending" ? "warning" : "muted"}>
+                    {statusText[application.status]}
+                  </Badge>
                 </div>
-                <p className="mt-2 text-sm text-muted-foreground">
-                  段位：{application.rank} / KD：{application.kd} / 价格：{formatMoney(application.price)}/局
-                </p>
-                <p className="mt-1 text-sm text-muted-foreground">联系方式：{application.contact}</p>
-                <p className="mt-1 text-sm text-muted-foreground">简介：{application.bio}</p>
+                <div className="mt-3 grid gap-2 text-sm text-muted-foreground md:grid-cols-2">
+                  <p>游戏 ID：{application.game_id}</p>
+                  <p>段位：{application.rank}</p>
+                  <p>KD：{application.kd}</p>
+                  <p>价格：{formatMoney(application.price)}/局</p>
+                  <p>微信：{application.contact_wechat || "未填写"}</p>
+                  <p>QQ：{application.contact_qq || "未填写"}</p>
+                  <p>擅长模式：{application.good_at_modes.join("，") || "未填写"}</p>
+                  <p>擅长地图：{application.good_at_maps.join("，") || "未填写"}</p>
+                </div>
+                <p className="mt-3 text-sm leading-6 text-muted-foreground">简介：{application.intro}</p>
+                {application.reject_reason ? <p className="mt-2 text-sm text-destructive">拒绝原因：{application.reject_reason}</p> : null}
               </div>
-              <div className="flex flex-wrap gap-2">
-                <Button type="button" size="sm" variant="outline" onClick={() => handleApplicationStatus(application.id, "approved")}>
-                  通过
-                </Button>
-                <Button type="button" size="sm" variant="danger" onClick={() => handleApplicationStatus(application.id, "rejected")}>
-                  驳回
-                </Button>
+
+              <div className="grid gap-3">
+                <Textarea
+                  placeholder="拒绝时填写原因，例如：资料不完整，请补充游戏 ID 和在线时间。"
+                  value={rejectReasons[application.id] || ""}
+                  onChange={(event) => setRejectReasons((current) => ({ ...current, [application.id]: event.target.value }))}
+                  disabled={application.status !== "pending"}
+                />
+                <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-1">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    disabled={application.status !== "pending"}
+                    onClick={() => handleReview(application.id, "approve")}
+                  >
+                    通过申请
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="danger"
+                    disabled={application.status !== "pending"}
+                    onClick={() => handleReview(application.id, "reject")}
+                  >
+                    拒绝申请
+                  </Button>
+                </div>
               </div>
             </div>
           ))}
         </CardContent>
       </Card>
-
-      <div className="mt-6 grid gap-4 lg:grid-cols-2">
-        <Card>
-          <CardHeader>
-            <CardTitle>提现管理</CardTitle>
-            <CardDescription>处理护航师提现申请。</CardDescription>
-          </CardHeader>
-          <CardContent className="grid gap-3">
-            {withdraws.map((withdraw) => (
-              <div key={withdraw.id} className="flex flex-col justify-between gap-3 rounded-md border border-border bg-black/30 p-4 sm:flex-row sm:items-center">
-                <div>
-                  <p className="font-medium">{withdraw.escortName}</p>
-                  <p className="text-sm text-muted-foreground">申请提现 {formatMoney(withdraw.amount)}</p>
-                </div>
-                <div className="flex flex-wrap items-center gap-2">
-                  <Badge tone={getStatusTone(withdraw.status)}>{withdrawStatusText[withdraw.status]}</Badge>
-                  <Button type="button" size="sm" variant="outline" onClick={() => handleWithdrawStatus(withdraw.id, "approved")}>
-                    通过
-                  </Button>
-                  <Button type="button" size="sm" variant="outline" onClick={() => handleWithdrawStatus(withdraw.id, "paid")}>
-                    打款
-                  </Button>
-                  <Button type="button" size="sm" variant="danger" onClick={() => handleWithdrawStatus(withdraw.id, "rejected")}>
-                    拒绝
-                  </Button>
-                </div>
-              </div>
-            ))}
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader>
-            <CardTitle>订单管理</CardTitle>
-            <CardDescription>管理员可以处理异常订单。</CardDescription>
-          </CardHeader>
-          <CardContent className="grid gap-3">
-            {orderList.slice(0, 4).map((order) => {
-              const service = services.find((item) => item.value === order.service_type);
-
-              return (
-                <div key={order.id} className="grid gap-3 rounded-md border border-border bg-black/30 p-4">
-                  <div>
-                    <div className="flex flex-wrap items-center gap-2">
-                      <p className="font-medium">{service?.label || "未知服务"}</p>
-                      <Badge tone={getStatusTone(order.status)}>{statusText[order.status]}</Badge>
-                    </div>
-                    <p className="mt-2 text-sm text-muted-foreground">
-                      {order.id} / {formatMoney(order.price)} / {order.remark || "无备注"}
-                    </p>
-                  </div>
-                  <div className="flex flex-wrap gap-2">
-                    <Button type="button" size="sm" variant="outline" onClick={() => handleOrderStatus(order.id, "accepted")}>
-                      接单
-                    </Button>
-                    <Button type="button" size="sm" variant="outline" onClick={() => handleOrderStatus(order.id, "in_progress")}>
-                      开始
-                    </Button>
-                    <Button type="button" size="sm" variant="outline" onClick={() => handleOrderStatus(order.id, "completed")}>
-                      完成
-                    </Button>
-                    <Button type="button" size="sm" variant="danger" onClick={() => handleOrderStatus(order.id, "cancelled")}>
-                      取消
-                    </Button>
-                  </div>
-                </div>
-              );
-            })}
-          </CardContent>
-        </Card>
-      </div>
     </div>
+  );
+}
+
+function StatCard({ title, value }: { title: string; value: number }) {
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>{title}</CardTitle>
+      </CardHeader>
+      <CardContent>
+        <p className="text-2xl font-bold">{value}</p>
+      </CardContent>
+    </Card>
   );
 }

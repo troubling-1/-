@@ -1,21 +1,21 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { ClipboardList, Home, LogOut, PlusCircle, Shield, ShieldCheck, UserRound } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { getLocalCurrentUser, logoutLocalUser, type LocalAuthUser } from "@/lib/local-auth";
+import { fetchAuthProfile } from "@/lib/auth-client";
+import { logoutLocalUser, type LocalAuthUser } from "@/lib/local-auth";
+import { createBrowserSupabaseClient } from "@/lib/supabase/client";
 import { cn } from "@/lib/utils";
 
-const desktopNavItems = [
+const baseNavItems = [
   { href: "/", label: "首页" },
   { href: "/escorts", label: "护航师" },
   { href: "/orders/create", label: "发布订单" },
-  { href: "/orders", label: "订单中心" },
-  { href: "/chat", label: "聊天" },
-  { href: "/user", label: "用户中心" },
-  { href: "/admin", label: "管理后台" },
+  { href: "/services", label: "服务介绍" },
+  { href: "/faq", label: "常见问题" },
 ];
 
 const mobileNavItems = [
@@ -23,30 +23,75 @@ const mobileNavItems = [
   { href: "/escorts", label: "护航师", icon: Shield },
   { href: "/orders/create", label: "下单", icon: PlusCircle },
   { href: "/orders", label: "订单", icon: ClipboardList },
-  { href: "/user", label: "我的", icon: UserRound },
+  { href: "/center", label: "我的", icon: UserRound },
 ];
+
+function getRoleNavItems(currentUser: LocalAuthUser | null) {
+  if (!currentUser) {
+    return baseNavItems;
+  }
+
+  if (currentUser.role === "admin") {
+    return [...baseNavItems, { href: "/admin", label: "管理后台" }];
+  }
+
+  if (currentUser.role === "escort") {
+    return [...baseNavItems, { href: "/escort/dashboard", label: "护航师后台" }, { href: "/orders", label: "订单中心" }];
+  }
+
+  return [...baseNavItems, { href: "/center", label: "用户中心" }, { href: "/join", label: "申请成为护航师" }];
+}
 
 export function SiteNav() {
   const pathname = usePathname();
+  const router = useRouter();
   const [currentUser, setCurrentUser] = useState<LocalAuthUser | null>(null);
 
   useEffect(() => {
-    function syncUser() {
-      setCurrentUser(getLocalCurrentUser());
+    let cancelled = false;
+
+    async function syncUserFromSupabase() {
+      try {
+        const profile = await fetchAuthProfile();
+
+        if (!cancelled && profile) {
+          setCurrentUser({
+            id: profile.id,
+            email: "",
+            nickname: profile.nickname,
+            role: profile.role,
+            status: profile.status,
+            created_at: profile.created_at,
+          });
+        }
+      } catch {
+        if (!cancelled) {
+          setCurrentUser(null);
+        }
+      }
     }
 
-    syncUser();
-    window.addEventListener("delta-escort-auth-change", syncUser);
-    window.addEventListener("storage", syncUser);
+    syncUserFromSupabase();
+    window.addEventListener("delta-escort-auth-change", syncUserFromSupabase);
+    window.addEventListener("storage", syncUserFromSupabase);
 
     return () => {
-      window.removeEventListener("delta-escort-auth-change", syncUser);
-      window.removeEventListener("storage", syncUser);
+      cancelled = true;
+      window.removeEventListener("delta-escort-auth-change", syncUserFromSupabase);
+      window.removeEventListener("storage", syncUserFromSupabase);
     };
   }, []);
 
-  function handleLogout() {
-    logoutLocalUser();
+  async function handleLogout() {
+    try {
+      const supabase = createBrowserSupabaseClient();
+      await supabase.auth.signOut();
+    } finally {
+      logoutLocalUser();
+      setCurrentUser(null);
+      router.push("/login");
+      router.refresh();
+    }
   }
 
   function isActive(href: string) {
@@ -65,6 +110,8 @@ export function SiteNav() {
     return pathname.startsWith(href);
   }
 
+  const desktopNavItems = getRoleNavItems(currentUser);
+
   return (
     <>
       <header className="sticky top-0 z-50 border-b border-border bg-background/95 backdrop-blur">
@@ -75,11 +122,7 @@ export function SiteNav() {
           </Link>
           <nav className="hidden items-center gap-5 text-sm text-muted-foreground lg:flex">
             {desktopNavItems.map((item) => (
-              <Link
-                key={item.href}
-                href={item.href}
-                className={cn("hover:text-foreground", isActive(item.href) ? "text-primary" : null)}
-              >
+              <Link key={item.href} href={item.href} className={cn("hover:text-foreground", isActive(item.href) ? "text-primary" : null)}>
                 {item.label}
               </Link>
             ))}
@@ -87,21 +130,35 @@ export function SiteNav() {
           <div className="flex shrink-0 items-center gap-2">
             {currentUser ? (
               <>
-                <Link href="/user" className="hidden max-w-32 truncate text-sm text-muted-foreground sm:inline">
-                  {currentUser.nickname}
-                </Link>
+                <Button asChild variant="outline" size="sm">
+                  <Link href={currentUser.role === "admin" ? "/admin" : currentUser.role === "escort" ? "/escort/dashboard" : "/center"}>
+                    {currentUser.role === "admin" ? "管理后台" : currentUser.role === "escort" ? "护航师后台" : "用户中心"}
+                  </Link>
+                </Button>
+                {currentUser.role === "customer" ? (
+                  <Button asChild variant="outline" size="sm" className="hidden sm:inline-flex">
+                    <Link href="/join">申请成为护航师</Link>
+                  </Button>
+                ) : null}
+                {currentUser.role === "escort" ? (
+                  <Button asChild variant="outline" size="sm" className="hidden sm:inline-flex">
+                    <Link href="/orders">订单中心</Link>
+                  </Button>
+                ) : null}
                 <Button type="button" variant="outline" size="sm" onClick={handleLogout}>
                   <LogOut className="h-4 w-4" aria-hidden="true" />
-                  <span className="hidden sm:inline">退出</span>
+                  <span className="hidden sm:inline">退出登录</span>
                 </Button>
               </>
             ) : (
-              <Button asChild variant="outline" size="sm">
-                <Link href="/login">
-                  <UserRound className="h-4 w-4" aria-hidden="true" />
-                  登录
-                </Link>
-              </Button>
+              <>
+                <Button asChild variant="outline" size="sm">
+                  <Link href="/login">登录</Link>
+                </Button>
+                <Button asChild size="sm">
+                  <Link href="/register">注册</Link>
+                </Button>
+              </>
             )}
           </div>
         </div>

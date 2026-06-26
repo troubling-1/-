@@ -6,8 +6,8 @@ import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
-import { registerLocalUser } from "@/lib/local-auth";
-import { createBrowserSupabaseClient } from "@/lib/supabase/client";
+import { fetchAuthProfile, getRoleHomePath } from "@/lib/auth-client";
+import { createBrowserSupabaseClient, getBrowserSupabaseConfigError } from "@/lib/supabase/client";
 
 export default function RegisterPage() {
   const router = useRouter();
@@ -23,12 +23,18 @@ export default function RegisterPage() {
     const password = String(formData.get("password") || "");
 
     if (!email || !password) {
-      setMessage("邮箱和密码不能为空");
+      setMessage("邮箱和密码不能为空。");
       return;
     }
 
     if (password.length < 6) {
-      setMessage("密码至少 6 位");
+      setMessage("密码至少 6 位。");
+      return;
+    }
+
+    const configError = getBrowserSupabaseConfigError();
+    if (configError) {
+      setMessage(`${configError} 当前不会发起 Supabase 注册请求。`);
       return;
     }
 
@@ -36,24 +42,25 @@ export default function RegisterPage() {
 
     try {
       const supabase = createBrowserSupabaseClient();
-      const { error } = await supabase.auth.signUp({ email, password });
+      const { data, error } = await supabase.auth.signUp({ email, password });
 
       if (error) {
-        setMessage(error.message);
+        setMessage(error.message || "注册失败，请稍后重试。");
         return;
       }
 
-      setMessage("注册成功，请按 Supabase 邮件配置完成验证");
-      router.push("/login");
-    } catch {
-      try {
-        registerLocalUser(email, password);
-        setMessage("本地注册成功，已自动登录");
-        router.push("/user");
+      if (data.session) {
+        const profile = await fetchAuthProfile();
+        setMessage("注册成功。");
+        router.push(profile ? getRoleHomePath(profile.role) : "/center");
         router.refresh();
-      } catch (localError) {
-        setMessage(localError instanceof Error ? localError.message : "注册失败");
+        return;
       }
+
+      setMessage("注册成功，请按 Supabase 邮件配置完成验证后再登录。");
+      router.push("/login");
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "注册失败，请稍后重试。");
     } finally {
       setIsSubmitting(false);
     }
@@ -64,7 +71,7 @@ export default function RegisterPage() {
       <Card>
         <CardHeader>
           <CardTitle>注册</CardTitle>
-          <CardDescription>创建普通玩家账号，后续可以申请成为护航师。</CardDescription>
+          <CardDescription>注册默认是普通玩家账号，不提供管理员注册入口。</CardDescription>
         </CardHeader>
         <CardContent>
           <form className="grid gap-4" onSubmit={handleRegister}>

@@ -3,7 +3,7 @@ import "./globals.css";
 import { SiteFooter } from "@/components/site/footer";
 import { SiteNav } from "@/components/site/nav";
 
-const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || "http://127.0.0.1:3000";
+const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || "https://delta-escort.pages.dev";
 
 export const metadata: Metadata = {
   metadataBase: new URL(siteUrl),
@@ -12,13 +12,13 @@ export const metadata: Metadata = {
     template: "%s | Delta Escort",
   },
   description:
-    "Delta Escort 是三角洲行动护航接单平台，支持带撤离、战备物资护送、上分陪玩、娱乐陪玩、订单评价和举报管理。",
+    "Delta Escort 是面向中国大陆玩家的三角洲行动护航陪玩平台，提供带撤离、战备物资护送、上分护航、娱乐陪玩、订单售后和客服协助。",
   keywords: [
     "三角洲行动护航",
     "三角洲行动陪玩",
     "三角洲行动带撤离",
-    "战备物资护送",
-    "上分陪玩",
+    "三角洲行动物资护送",
+    "三角洲行动上分",
     "Delta Escort",
   ],
   applicationName: "Delta Escort",
@@ -34,23 +34,11 @@ export const metadata: Metadata = {
     url: siteUrl,
     siteName: "Delta Escort",
     title: "Delta Escort - 三角洲行动护航陪玩平台",
-    description: "深色军事科技风护航接单平台，覆盖带撤离、物资护送、上分陪玩、评价与举报管理。",
-  },
-  twitter: {
-    card: "summary_large_image",
-    title: "Delta Escort - 三角洲行动护航陪玩平台",
-    description: "三角洲行动护航、带撤离、物资护送、上分陪玩和娱乐陪玩接单平台。",
+    description: "支持带撤离、物资护送、上分护航和娱乐陪玩，提供订单记录、客服协助、评价和举报入口。",
   },
   robots: {
     index: true,
     follow: true,
-    googleBot: {
-      index: true,
-      follow: true,
-      "max-image-preview": "large",
-      "max-snippet": -1,
-      "max-video-preview": -1,
-    },
   },
 };
 

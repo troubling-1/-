@@ -10,6 +10,7 @@ export type LocalAuthUser = {
   email: string;
   nickname: string;
   role: UserRole;
+  status?: "active" | "banned";
   created_at: string;
 };
 
@@ -44,6 +45,10 @@ function saveSession(user: LocalAuthUser) {
   window.dispatchEvent(new Event("delta-escort-auth-change"));
 }
 
+export function saveLocalSession(user: LocalAuthUser) {
+  saveSession(user);
+}
+
 export function getLocalCurrentUser(): LocalAuthUser | null {
   if (typeof window === "undefined") {
     return null;
@@ -76,7 +81,7 @@ export function registerLocalUser(email: string, password: string) {
     email: normalizedEmail,
     password,
     nickname,
-    role: "player",
+    role: "customer",
     created_at: new Date().toISOString(),
   };
 

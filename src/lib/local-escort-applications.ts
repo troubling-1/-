@@ -64,7 +64,7 @@ export function createLocalEscortApplication(input: CreateEscortApplicationInput
   const existingApplication = applications.find((application) => application.user_id === input.user_id);
 
   if (existingApplication && existingApplication.status === "pending") {
-    throw new Error("你已经提交过入驻申请，请等待管理员审核");
+    throw new Error("你已经提交过入驻申请，请等待管理员审核。");
   }
 
   const nextApplications = applications.filter((application) => application.user_id !== input.user_id);
@@ -97,7 +97,7 @@ export function updateLocalEscortApplicationStatus(
       ? {
           ...application,
           status,
-          reject_reason: status === "rejected" ? rejectReason || "资料不符合入驻要求" : null,
+          reject_reason: status === "rejected" ? rejectReason || "资料不符合入驻要求。" : null,
         }
       : application,
   );
