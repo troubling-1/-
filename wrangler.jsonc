@@ -6,7 +6,8 @@
   "compatibility_flags": ["nodejs_compat", "global_fetch_strictly_public"],
   "vars": {
     "NEXT_PUBLIC_SITE_URL": "https://delta-escort.865111370.workers.dev",
-    "NEXT_PUBLIC_SUPABASE_URL": "https://tiqxfakxkrjztbalqlgh.supabase.co"
+    "NEXT_PUBLIC_SUPABASE_URL": "https://tiqxfakxkrjztbalqlgh.supabase.co",
+    "NEXT_PUBLIC_SUPABASE_ANON_KEY": "sb_publishable_nqtq10yoRVHLu-MyF3f6mg_AcxIswgq"
   },
   "assets": {
     "directory": ".open-next/assets",
