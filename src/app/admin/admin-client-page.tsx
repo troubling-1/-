@@ -15,6 +15,18 @@ const statusText = {
   rejected: "已拒绝",
 };
 
+function formatTags(value: unknown) {
+  if (Array.isArray(value)) {
+    return value.map((item) => String(item).trim()).filter(Boolean).join("，");
+  }
+
+  if (typeof value === "string") {
+    return value.trim();
+  }
+
+  return "";
+}
+
 export function AdminClientPage() {
   const [applications, setApplications] = useState<EscortApplication[]>([]);
   const [rejectReasons, setRejectReasons] = useState<Record<string, string>>({});
@@ -147,8 +159,8 @@ export function AdminClientPage() {
                   <p>价格：{formatMoney(application.price)}/局</p>
                   <p>微信：{application.contact_wechat || "未填写"}</p>
                   <p>QQ：{application.contact_qq || "未填写"}</p>
-                  <p>擅长模式：{application.good_at_modes.join("，") || "未填写"}</p>
-                  <p>擅长地图：{application.good_at_maps.join("，") || "未填写"}</p>
+                  <p>擅长模式：{formatTags(application.good_at_modes) || "未填写"}</p>
+                  <p>擅长地图：{formatTags(application.good_at_maps) || "未填写"}</p>
                 </div>
                 <p className="mt-3 text-sm leading-6 text-muted-foreground">简介：{application.intro}</p>
                 {application.reject_reason ? <p className="mt-2 text-sm text-destructive">拒绝原因：{application.reject_reason}</p> : null}

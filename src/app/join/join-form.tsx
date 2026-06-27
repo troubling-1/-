@@ -18,6 +18,18 @@ const statusText = {
   rejected: "已拒绝",
 };
 
+function formatTags(value: unknown) {
+  if (Array.isArray(value)) {
+    return value.map((item) => String(item).trim()).filter(Boolean).join("，");
+  }
+
+  if (typeof value === "string") {
+    return value.trim();
+  }
+
+  return "";
+}
+
 export function JoinForm() {
   const router = useRouter();
   const [profile, setProfile] = useState<User | null>(null);
@@ -210,11 +222,11 @@ export function JoinForm() {
               </label>
               <label className="grid gap-2 text-sm">
                 擅长模式
-                <Input name="good_at_modes" placeholder="例如：带撤离，物资护送" defaultValue={application?.good_at_modes.join("，") || ""} />
+                <Input name="good_at_modes" placeholder="例如：带撤离，物资护送" defaultValue={formatTags(application?.good_at_modes)} />
               </label>
               <label className="grid gap-2 text-sm">
                 擅长地图
-                <Input name="good_at_maps" placeholder="例如：航天基地，零号大坝" defaultValue={application?.good_at_maps.join("，") || ""} />
+                <Input name="good_at_maps" placeholder="例如：航天基地，零号大坝" defaultValue={formatTags(application?.good_at_maps)} />
               </label>
               <label className="grid gap-2 text-sm">
                 每局价格

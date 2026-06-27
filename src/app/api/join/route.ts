@@ -14,6 +14,32 @@ function splitTags(value: unknown) {
     .slice(0, 8);
 }
 
+function normalizeTags(value: unknown) {
+  if (Array.isArray(value)) {
+    return value.map((item) => String(item).trim()).filter(Boolean).slice(0, 8);
+  }
+
+  return String(value || "")
+    .split(/[，,\n]/)
+    .map((item) => item.trim())
+    .filter(Boolean)
+    .slice(0, 8);
+}
+
+function normalizeApplication<T extends Record<string, unknown> | null>(application: T) {
+  if (!application) {
+    return null;
+  }
+
+  return {
+    ...application,
+    kd: Number(application.kd) || 0,
+    price: Number(application.price) || 0,
+    good_at_modes: normalizeTags(application.good_at_modes),
+    good_at_maps: normalizeTags(application.good_at_maps),
+  };
+}
+
 export async function GET(request: Request) {
   const authResult = await getAuthProfile(request);
 
@@ -39,7 +65,7 @@ export async function GET(request: Request) {
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
 
-  return NextResponse.json({ data });
+  return NextResponse.json({ data: normalizeApplication(data) });
 }
 
 export async function POST(request: Request) {
@@ -63,8 +89,8 @@ export async function POST(request: Request) {
     const contactQq = String(body.contact_qq || "").trim();
     const rank = String(body.rank || "").trim();
     const kd = Number(body.kd);
-    const goodAtModes = splitTags(body.good_at_modes);
-    const goodAtMaps = splitTags(body.good_at_maps);
+    const goodAtModes = normalizeTags(body.good_at_modes);
+    const goodAtMaps = normalizeTags(body.good_at_maps);
     const price = Number(body.price);
     const intro = String(body.intro || "").trim();
 
@@ -135,7 +161,7 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: error.message }, { status: 500 });
     }
 
-    return NextResponse.json({ data }, { status: 201 });
+    return NextResponse.json({ data: normalizeApplication(data) }, { status: 201 });
   } catch (error) {
     return NextResponse.json({ error: error instanceof Error ? error.message : "提交入驻申请失败。" }, { status: 500 });
   }

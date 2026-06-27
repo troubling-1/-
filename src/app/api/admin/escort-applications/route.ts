@@ -2,6 +2,35 @@ import { NextResponse } from "next/server";
 import { requireAdminProfile } from "@/lib/supabase/auth";
 import { createServiceSupabaseClient } from "@/lib/supabase/service";
 
+function normalizeTags(value: unknown) {
+  if (Array.isArray(value)) {
+    return value.map((item) => String(item).trim()).filter(Boolean);
+  }
+
+  if (typeof value === "string") {
+    return value
+      .split(/[，,\n]/)
+      .map((item) => item.trim())
+      .filter(Boolean);
+  }
+
+  return [];
+}
+
+function normalizeApplication<T extends Record<string, unknown> | null>(application: T) {
+  if (!application) {
+    return null;
+  }
+
+  return {
+    ...application,
+    kd: Number(application.kd) || 0,
+    price: Number(application.price) || 0,
+    good_at_modes: normalizeTags(application.good_at_modes),
+    good_at_maps: normalizeTags(application.good_at_maps),
+  };
+}
+
 export async function GET(request: Request) {
   const authResult = await requireAdminProfile(request);
 
@@ -24,7 +53,7 @@ export async function GET(request: Request) {
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
 
-  return NextResponse.json({ data });
+  return NextResponse.json({ data: (data || []).map((item) => normalizeApplication(item)) });
 }
 
 export async function PATCH(request: Request) {
@@ -80,7 +109,7 @@ export async function PATCH(request: Request) {
         return NextResponse.json({ error: error.message }, { status: 500 });
       }
 
-      return NextResponse.json({ data });
+      return NextResponse.json({ data: normalizeApplication(data) });
     }
 
     const { error: approveError } = await supabase
