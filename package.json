@@ -7,9 +7,9 @@
   },
   "scripts": {
     "dev": "next dev --hostname 127.0.0.1 --port 3000",
-    "build": "next build",
-    "preview": "opennextjs-cloudflare build && opennextjs-cloudflare preview",
-    "deploy": "opennextjs-cloudflare build && opennextjs-cloudflare deploy",
+    "build": "opennextjs-cloudflare build",
+    "preview": "opennextjs-cloudflare build && wrangler dev",
+    "deploy": "opennextjs-cloudflare build && wrangler deploy",
     "start": "next start",
     "lint": "eslint ."
   },
