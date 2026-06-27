@@ -1,5 +1,3 @@
-export const runtime = "edge";
-
 import { NextResponse } from "next/server";
 import { escorts } from "@/lib/mock-data";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
