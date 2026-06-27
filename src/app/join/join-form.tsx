@@ -10,7 +10,6 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { getAuthSessionState } from "@/lib/auth-client";
 import type { EscortApplication, User } from "@/lib/types";
-import { formatMoney } from "@/lib/utils";
 
 const statusText = {
   pending: "待审核",
@@ -38,6 +37,7 @@ export function JoinForm() {
   const [message, setMessage] = useState("");
   const [isChecking, setIsChecking] = useState(true);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [showRejectedForm, setShowRejectedForm] = useState(false);
 
   async function loadApplication(token: string) {
     const response = await fetch("/api/join", {
@@ -129,7 +129,8 @@ export function JoinForm() {
       }
 
       setApplication(result.data);
-      setMessage("入驻申请已提交，请等待管理员审核。");
+      router.push("/join/success");
+      router.refresh();
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "提交入驻申请失败。");
     } finally {
@@ -143,17 +144,52 @@ export function JoinForm() {
 
   if (profile?.role === "escort") {
     return (
-      <div className="mx-auto max-w-3xl px-4 py-10">
-        <Card>
-          <CardContent className="p-6">
-            <h1 className="text-2xl font-bold">你已经是护航师</h1>
-            <p className="mt-3 text-sm leading-6 text-muted-foreground">当前账号已通过护航师审核，可以进入护航师后台管理资料和订单。</p>
-            <Button asChild className="mt-6">
-              <Link href="/escort/dashboard">进入护航师后台</Link>
-            </Button>
-          </CardContent>
-        </Card>
-      </div>
+      <JoinStatusPanel
+        title="你已成为认证护航师。"
+        description="当前账号已通过平台审核，可以进入护航师后台管理资料和订单。"
+        badgeText="已通过"
+        actions={[{ label: "进入护航师后台", href: "/escort/dashboard" }]}
+      />
+    );
+  }
+
+  if (application && application.status === "pending") {
+    return (
+      <JoinStatusPanel
+        title="你已提交申请，正在审核中。"
+        description="平台正在审核你的护航师入驻资料，审核结果会同步到个人中心。"
+        badgeText="待审核"
+        actions={[
+          { label: "查看申请状态", href: "/center" },
+          { label: "返回个人中心", href: "/center" },
+          { label: "联系客服", href: "/chat" },
+        ]}
+      />
+    );
+  }
+
+  if (application && application.status === "approved") {
+    return (
+      <JoinStatusPanel
+        title="你已成为认证护航师。"
+        description="当前申请已通过平台审核，可以进入护航师后台。"
+        badgeText="已通过"
+        actions={[{ label: "进入护航师后台", href: "/escort/dashboard" }]}
+      />
+    );
+  }
+
+  if (application && application.status === "rejected" && !showRejectedForm) {
+    return (
+      <JoinStatusPanel
+        title="申请未通过"
+        description={application.reject_reason || "当前申请未通过平台审核，请完善资料后重新提交。"}
+        badgeText="已拒绝"
+        actions={[
+          { label: "重新提交申请", onClick: () => setShowRejectedForm(true) },
+          { label: "联系客服", href: "/chat" },
+        ]}
+      />
     );
   }
 
@@ -167,23 +203,11 @@ export function JoinForm() {
         </p>
       </div>
 
-      {application ? (
-        <Card className="mb-5">
+      {application?.status === "rejected" ? (
+        <Card className="mb-5 border-red-400/25 bg-red-400/10">
           <CardContent className="p-5">
-            <div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-center">
-              <div>
-                <p className="font-bold">当前申请状态</p>
-                <p className="mt-2 text-sm text-muted-foreground">
-                  {application.nickname} / {application.rank} / {formatMoney(application.price)}/局
-                </p>
-                {application.status === "rejected" && application.reject_reason ? (
-                  <p className="mt-2 text-sm text-destructive">拒绝原因：{application.reject_reason}</p>
-                ) : null}
-              </div>
-              <Badge tone={application.status === "approved" ? "success" : application.status === "pending" ? "warning" : "muted"}>
-                {statusText[application.status]}
-              </Badge>
-            </div>
+            <p className="font-bold">上次申请未通过</p>
+            <p className="mt-2 text-sm leading-6 text-muted-foreground">{application.reject_reason || "请完善资料后重新提交。"}</p>
           </CardContent>
         </Card>
       ) : null}
@@ -252,6 +276,45 @@ export function JoinForm() {
               </Button>
             </div>
           </form>
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
+
+type JoinStatusAction = {
+  label: string;
+  href?: string;
+  onClick?: () => void;
+};
+
+function JoinStatusPanel({ title, description, badgeText, actions }: { title: string; description: string; badgeText: string; actions: JoinStatusAction[] }) {
+  return (
+    <div className="relative min-h-[calc(100vh-4rem)] overflow-hidden bg-[#050907] px-4 py-10">
+      <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_50%_0%,rgba(16,185,129,0.16),transparent_38%),linear-gradient(180deg,rgba(15,23,42,0.18),rgba(0,0,0,0.78))]" />
+      <Card className="relative mx-auto max-w-3xl border-emerald-300/20 bg-white/[0.04] shadow-[0_0_45px_rgba(16,185,129,0.12)] backdrop-blur-md">
+        <CardContent className="p-6 sm:p-8">
+          <p className="text-sm font-medium text-emerald-300">护航师入驻</p>
+          <div className="mt-4 flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+            <div>
+              <h1 className="text-3xl font-bold">{title}</h1>
+              <p className="mt-3 text-sm leading-6 text-muted-foreground">{description}</p>
+            </div>
+            <Badge tone="warning">{badgeText}</Badge>
+          </div>
+          <div className="mt-7 flex flex-col gap-3 sm:flex-row">
+            {actions.map((action) =>
+              action.href ? (
+                <Button key={action.label} asChild variant="outline">
+                  <Link href={action.href}>{action.label}</Link>
+                </Button>
+              ) : (
+                <Button key={action.label} type="button" onClick={action.onClick}>
+                  {action.label}
+                </Button>
+              ),
+            )}
+          </div>
         </CardContent>
       </Card>
     </div>

@@ -2,12 +2,14 @@
 
 import { useState } from "react";
 import { Send } from "lucide-react";
+import { ContactServiceCard } from "@/components/site/contact-service-card";
+import { RiskAlert } from "@/components/site/risk-alert";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 
 const initialMessages = [
-  { id: "1", from: "客服", content: "您好，下单前可以先告诉我服务类型、区服、预约时间和是否需要语音。" },
+  { id: "1", from: "客服", content: "你好，下单前可以先告诉我服务类型、区服、预约时间和是否需要语音。" },
   { id: "2", from: "我", content: "想今晚 9 点后带撤离，最好能顺路护送一点物资。" },
 ];
 
@@ -27,11 +29,11 @@ export default function ChatPage() {
   }
 
   return (
-    <div className="mx-auto max-w-5xl px-4 py-8 sm:py-10">
+    <div className="mx-auto grid max-w-5xl gap-5 px-4 py-8 sm:py-10 lg:grid-cols-[1fr_340px]">
       <Card>
         <CardHeader className="p-4 sm:p-5">
           <CardTitle>联系客服</CardTitle>
-          <p className="text-sm leading-6 text-muted-foreground">客服时间：每日 10:00 - 24:00。下单后请保持 QQ、微信或站内聊天可联系。</p>
+          <p className="text-sm leading-6 text-muted-foreground">客服时间：每日 10:00 - 24:00。下单后请保持 QQ、微信或站内客服可联系。</p>
         </CardHeader>
         <CardContent className="p-4 pt-0 sm:p-5 sm:pt-0">
           <div className="grid min-h-[420px] content-end gap-3 rounded-md border border-border bg-black/30 p-3 sm:p-4">
@@ -52,6 +54,11 @@ export default function ChatPage() {
           </div>
         </CardContent>
       </Card>
+
+      <div className="grid content-start gap-4">
+        <RiskAlert />
+        <ContactServiceCard compact />
+      </div>
     </div>
   );
 }

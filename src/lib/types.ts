@@ -10,6 +10,10 @@ export type WithdrawStatus = "pending" | "approved" | "rejected" | "paid";
 
 export type ServiceType = "escort" | "evacuation" | "materials" | "rank" | "fun";
 
+export type ReportStatus = "pending" | "processing" | "resolved" | "rejected";
+
+export type ReportType = "no_show" | "bad_attitude" | "private_trade" | "fraud" | "abuse" | "other";
+
 export type User = {
   id: string;
   email?: string | null;
@@ -64,16 +68,26 @@ export type Escort = {
 
 export type Order = {
   id: string;
+  customer_id?: string | null;
   user_id: string;
   escort_id: string;
   service_type: ServiceType;
+  game_mode?: string | null;
+  requirement?: string | null;
   price: number;
   status: OrderStatus;
+  contact_wechat?: string | null;
+  contact_qq?: string | null;
   remark: string | null;
   cancel_reason?: string | null;
   cancelled_at?: string | null;
+  accepted_at?: string | null;
+  completed_at?: string | null;
+  updated_at?: string | null;
   appointment_time?: string | null;
   created_at: string;
+  escorts?: Pick<Escort, "id" | "nickname" | "user_id" | "price"> | null;
+  customer?: Pick<User, "id" | "nickname" | "email"> | null;
 };
 
 export type Message = {
@@ -91,7 +105,32 @@ export type Review = {
   escort_id: string;
   rating: number;
   content: string;
+  tags?: string[];
+  hidden?: boolean;
   created_at: string;
+  updated_at?: string | null;
+  users?: Pick<User, "id" | "nickname" | "email"> | null;
+  escorts?: Pick<Escort, "id" | "nickname" | "user_id"> | null;
+  orders?: Pick<Order, "id" | "status"> | null;
+};
+
+export type Report = {
+  id: string;
+  reporter_id: string;
+  target_user_id: string | null;
+  order_id: string | null;
+  review_id: string | null;
+  type: ReportType;
+  reason: string;
+  description: string;
+  status: ReportStatus;
+  admin_note: string | null;
+  created_at: string;
+  updated_at: string;
+  reporter?: Pick<User, "id" | "nickname" | "email"> | null;
+  target_user?: Pick<User, "id" | "nickname" | "email"> | null;
+  orders?: Pick<Order, "id" | "customer_id" | "user_id" | "escort_id" | "status"> | null;
+  reviews?: Pick<Review, "id" | "rating" | "content" | "hidden"> | null;
 };
 
 export type Withdraw = {

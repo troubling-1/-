@@ -13,7 +13,7 @@ import { cn } from "@/lib/utils";
 const baseNavItems = [
   { href: "/", label: "首页" },
   { href: "/escorts", label: "护航师" },
-  { href: "/orders/create", label: "发布订单" },
+  { href: "/escorts", label: "立即下单" },
   { href: "/services", label: "服务介绍" },
   { href: "/faq", label: "常见问题" },
 ];
@@ -21,7 +21,7 @@ const baseNavItems = [
 const mobileNavItems = [
   { href: "/", label: "首页", icon: Home },
   { href: "/escorts", label: "护航师", icon: Shield },
-  { href: "/orders/create", label: "下单", icon: PlusCircle },
+  { href: "/escorts", label: "下单", icon: PlusCircle },
   { href: "/orders", label: "订单", icon: ClipboardList },
   { href: "/center", label: "我的", icon: UserRound },
 ];
@@ -103,8 +103,8 @@ export function SiteNav() {
       return pathname === "/orders";
     }
 
-    if (href === "/orders/create") {
-      return pathname.startsWith("/orders/create");
+    if (href === "/escorts") {
+      return pathname.startsWith("/escorts") || pathname.startsWith("/orders/new");
     }
 
     return pathname.startsWith(href);
@@ -121,8 +121,8 @@ export function SiteNav() {
             <span className="truncate text-base font-bold tracking-wide">Delta Escort</span>
           </Link>
           <nav className="hidden items-center gap-5 text-sm text-muted-foreground lg:flex">
-            {desktopNavItems.map((item) => (
-              <Link key={item.href} href={item.href} className={cn("hover:text-foreground", isActive(item.href) ? "text-primary" : null)}>
+            {desktopNavItems.map((item, index) => (
+              <Link key={`${item.href}-${index}`} href={item.href} className={cn("hover:text-foreground", isActive(item.href) ? "text-primary" : null)}>
                 {item.label}
               </Link>
             ))}
@@ -172,7 +172,7 @@ export function SiteNav() {
 
             return (
               <Link
-                key={item.href}
+                key={`${item.href}-${item.label}`}
                 href={item.href}
                 className={cn(
                   "flex min-h-14 flex-col items-center justify-center gap-1 rounded-md px-1 text-[11px] text-muted-foreground",
