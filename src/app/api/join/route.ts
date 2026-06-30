@@ -1,18 +1,6 @@
 import { NextResponse } from "next/server";
-import { createServiceSupabaseClient } from "@/lib/supabase/service";
 import { getAuthProfile } from "@/lib/supabase/auth";
-
-function splitTags(value: unknown) {
-  if (Array.isArray(value)) {
-    return value.map((item) => String(item).trim()).filter(Boolean).slice(0, 8);
-  }
-
-  return String(value || "")
-    .split(/[，,\n]/)
-    .map((item) => item.trim())
-    .filter(Boolean)
-    .slice(0, 8);
-}
+import { createServiceSupabaseClient } from "@/lib/supabase/service";
 
 function normalizeTags(value: unknown) {
   if (Array.isArray(value)) {
@@ -20,16 +8,14 @@ function normalizeTags(value: unknown) {
   }
 
   return String(value || "")
-    .split(/[，,\n]/)
+    .split(/[，,、\n]/)
     .map((item) => item.trim())
     .filter(Boolean)
     .slice(0, 8);
 }
 
 function normalizeApplication<T extends Record<string, unknown> | null>(application: T) {
-  if (!application) {
-    return null;
-  }
+  if (!application) return null;
 
   return {
     ...application,

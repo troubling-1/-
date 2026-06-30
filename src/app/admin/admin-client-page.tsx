@@ -7,8 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Textarea } from "@/components/ui/textarea";
 import { getCurrentAccessToken } from "@/lib/auth-client";
-import { adminOperationStats, platformStats, todayDeals } from "@/lib/operation-seed";
-import type { EscortApplication, Order, OrderStatus, Report, ReportStatus, Review } from "@/lib/types";
+import type { Escort, EscortApplication, Order, OrderStatus, Report, ReportStatus, Review } from "@/lib/types";
 import { formatMoney } from "@/lib/utils";
 
 const applicationStatusText = {
@@ -18,11 +17,14 @@ const applicationStatusText = {
 };
 
 const orderStatusText: Record<OrderStatus, string> = {
+  pending_payment: "待支付",
   pending: "待接单",
   accepted: "已接单",
-  in_progress: "进行中",
+  in_progress: "服务中",
+  pending_confirm: "待确认",
   completed: "已完成",
   cancelled: "已取消",
+  disputed: "申诉中",
 };
 
 const reportStatusText: Record<ReportStatus, string> = {
@@ -31,6 +33,20 @@ const reportStatusText: Record<ReportStatus, string> = {
   resolved: "已解决",
   rejected: "已驳回",
 };
+
+const orderFilters: Array<OrderStatus | "all"> = [
+  "all",
+  "pending_payment",
+  "pending",
+  "accepted",
+  "in_progress",
+  "pending_confirm",
+  "completed",
+  "cancelled",
+  "disputed",
+];
+
+const reportFilters: Array<ReportStatus | "all"> = ["all", "pending", "processing", "resolved", "rejected"];
 
 function formatTags(value: unknown) {
   if (Array.isArray(value)) {
@@ -47,6 +63,7 @@ function formatTags(value: unknown) {
 export function AdminClientPage() {
   const router = useRouter();
   const [applications, setApplications] = useState<EscortApplication[]>([]);
+  const [escorts, setEscorts] = useState<Escort[]>([]);
   const [orders, setOrders] = useState<Order[]>([]);
   const [reviews, setReviews] = useState<Review[]>([]);
   const [reports, setReports] = useState<Report[]>([]);
@@ -62,6 +79,16 @@ export function AdminClientPage() {
   const [updatingReportId, setUpdatingReportId] = useState<string | null>(null);
 
   const pendingApplications = useMemo(() => applications.filter((item) => item.status === "pending"), [applications]);
+  const activeEscorts = useMemo(() => escorts.filter((item) => item.status === "active" || item.approved), [escorts]);
+  const completedOrders = useMemo(() => orders.filter((item) => item.status === "completed"), [orders]);
+  const runningOrders = useMemo(() => orders.filter((item) => item.status === "accepted" || item.status === "in_progress" || item.status === "pending_confirm"), [orders]);
+  const pendingReports = useMemo(() => reports.filter((item) => item.status === "pending" || item.status === "processing"), [reports]);
+  const totalAmount = useMemo(() => completedOrders.reduce((sum, order) => sum + order.price, 0), [completedOrders]);
+  const platformFee = useMemo(() => completedOrders.reduce((sum, order) => sum + (Number(order.platform_fee) || order.price * 0.12), 0), [completedOrders]);
+  const todayOrderCount = useMemo(() => {
+    const todayText = new Date().toLocaleDateString("zh-CN");
+    return orders.filter((order) => new Date(order.created_at).toLocaleDateString("zh-CN") === todayText).length;
+  }, [orders]);
 
   async function getTokenOrShowMessage() {
     const token = await getCurrentAccessToken();
@@ -77,24 +104,19 @@ export function AdminClientPage() {
   async function loadApplications() {
     const token = await getTokenOrShowMessage();
 
-    if (!token) {
-      setIsLoading(false);
-      return;
-    }
+    if (!token) return;
 
     const response = await fetch("/api/admin/escort-applications", {
       headers: { Authorization: `Bearer ${token}` },
     });
     const result = await response.json();
 
-    if (!response.ok) {
+    if (response.ok) {
+      setApplications(result.data || []);
+      setEscorts(result.escorts || []);
+    } else {
       setMessage(result.error || "读取护航师申请失败。");
-      setIsLoading(false);
-      return;
     }
-
-    setApplications(result.data || []);
-    setIsLoading(false);
   }
 
   async function loadOrders(status: OrderStatus | "all" = orderStatusFilter) {
@@ -149,7 +171,9 @@ export function AdminClientPage() {
   }
 
   async function loadAll() {
+    setIsLoading(true);
     await Promise.all([loadApplications(), loadOrders(), loadReviews(), loadReports()]);
+    setIsLoading(false);
   }
 
   useEffect(() => {
@@ -196,9 +220,7 @@ export function AdminClientPage() {
       const result = await response.json();
 
       if (!response.ok) {
-        setMessage(result.error || "审核失败。");
-        setReviewingAction(null);
-        return;
+        throw new Error(result.error || "审核失败。");
       }
 
       router.push(`/admin/review-success?type=${action === "approve" ? "approved" : "rejected"}`);
@@ -226,7 +248,7 @@ export function AdminClientPage() {
           "Content-Type": "application/json",
           Authorization: `Bearer ${token}`,
         },
-        body: JSON.stringify({ id: orderId, status: "cancelled" }),
+        body: JSON.stringify({ id: orderId, action: "cancel", cancel_reason: "管理员取消异常订单" }),
       });
       const result = await response.json();
 
@@ -238,6 +260,40 @@ export function AdminClientPage() {
       await loadOrders();
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "取消订单失败。");
+    } finally {
+      setUpdatingOrderId(null);
+    }
+  }
+
+  async function markOrderDisputed(orderId: string) {
+    setMessage("");
+    setUpdatingOrderId(orderId);
+    const token = await getTokenOrShowMessage();
+
+    if (!token) {
+      setUpdatingOrderId(null);
+      return;
+    }
+
+    try {
+      const response = await fetch("/api/orders", {
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({ id: orderId, action: "dispute" }),
+      });
+      const result = await response.json();
+
+      if (!response.ok) {
+        throw new Error(result.error || "标记申诉失败。");
+      }
+
+      setMessage("订单已标记为申诉中。");
+      await loadOrders();
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "标记申诉失败。");
     } finally {
       setUpdatingOrderId(null);
     }
@@ -320,57 +376,34 @@ export function AdminClientPage() {
       <div>
         <p className="text-sm text-primary">管理后台</p>
         <h1 className="mt-2 text-3xl font-bold">运营数据看板</h1>
-        <p className="mt-2 text-sm leading-6 text-muted-foreground">用于快速查看成交、用户、护航师和风控处理状态。</p>
+        <p className="mt-2 text-sm leading-6 text-muted-foreground">查看订单、护航师、评价和举报处理状态。</p>
       </div>
 
       <div className="mt-6 grid gap-4 md:grid-cols-4">
-        <StatCard title="累计成交额" value={formatMoney(adminOperationStats.grossMerchandiseValue)} text="种子运营展示口径" />
-        <StatCard title="本月订单" value={`${adminOperationStats.monthlyOrders}`} text="含已完成和进行中订单" />
-        <StatCard title="今日新增用户" value={`${adminOperationStats.newUsersToday}`} text={`活跃用户 ${platformStats.activeUsers}`} />
-        <StatCard title="护航师在线率" value={`${adminOperationStats.escortOnlineRate}%`} text="认证护航师在线占比" />
-      </div>
-
-      <Card className="mt-6 border-emerald-300/20 bg-emerald-300/[0.05]">
-        <CardHeader>
-          <CardTitle>今日成交滚动</CardTitle>
-          <CardDescription>用于运营观察和首页成交氛围展示。</CardDescription>
-        </CardHeader>
-        <CardContent className="grid gap-3 md:grid-cols-2">
-          {todayDeals.map((deal) => (
-            <div key={deal.id} className="rounded-md border border-white/10 bg-black/25 p-4 text-sm">
-              <div className="flex justify-between gap-3">
-                <p className="font-medium">{deal.user} / {deal.service}</p>
-                <p className="text-emerald-300">{formatMoney(deal.amount)}</p>
-              </div>
-              <p className="mt-2 text-muted-foreground">护航师 {deal.escort}，{deal.status}，{deal.time}</p>
-            </div>
-          ))}
-        </CardContent>
-      </Card>
-
-      <div className="mt-6 grid gap-4 md:grid-cols-4">
-        <StatCard title="全部申请" value={`${applications.length}`} text="护航师入驻" />
-        <StatCard title="待审核申请" value={`${pendingApplications.length}`} text="需要人工处理" />
-        <StatCard title="订单数量" value={`${orders.length}`} text="当前筛选结果" />
-        <StatCard title="待处理举报" value={`${reports.filter((item) => item.status === "pending").length}`} text="风控优先级高" />
+        <StatCard title="总订单数" value={`${orders.length}`} text="当前筛选范围内订单" />
+        <StatCard title="今日订单数" value={`${todayOrderCount}`} text="按创建时间统计" />
+        <StatCard title="已完成订单" value={`${completedOrders.length}`} text="玩家已确认完成" />
+        <StatCard title="进行中订单" value={`${runningOrders.length}`} text="已接单、服务中、待确认" />
+        <StatCard title="总成交额" value={formatMoney(totalAmount)} text="已完成订单金额" />
+        <StatCard title="平台服务费" value={formatMoney(platformFee)} text="按订单服务费字段统计" />
+        <StatCard title="待处理申诉" value={`${pendingReports.length}`} text="举报待处理或处理中" />
+        <StatCard title="Active 护航师" value={`${activeEscorts.length}`} text="可接单护航师资料" />
       </div>
 
       {message ? <p className="mt-6 rounded-md border border-border bg-muted p-3 text-sm">{message}</p> : null}
+      {isLoading ? <p className="mt-6 text-sm text-muted-foreground">正在加载后台数据...</p> : null}
 
       <Card className="mt-6">
         <CardHeader>
           <CardTitle>护航师申请审核</CardTitle>
-          <CardDescription>通过后会同步用户身份为护航师；拒绝时用户可在个人中心看到原因。</CardDescription>
+          <CardDescription>通过后同步用户身份和 escorts 资料；拒绝时需要填写原因。</CardDescription>
         </CardHeader>
         <CardContent className="grid gap-4">
-          {isLoading ? <p className="text-sm text-muted-foreground">正在加载申请...</p> : null}
-          {!isLoading && applications.length === 0 ? <EmptyText>暂无护航师申请。</EmptyText> : null}
-
+          {applications.length === 0 ? <EmptyText>暂无护航师申请。</EmptyText> : null}
           {applications.map((application) => {
             const isReviewingApprove = reviewingAction?.id === application.id && reviewingAction.action === "approve";
             const isReviewingReject = reviewingAction?.id === application.id && reviewingAction.action === "reject";
-            const isAnyReviewing = Boolean(reviewingAction);
-            const canReview = application.status === "pending" && !isAnyReviewing;
+            const canReview = application.status === "pending" && !reviewingAction;
 
             return (
               <div key={application.id} className="grid gap-4 rounded-md border border-border bg-black/30 p-4 lg:grid-cols-[1fr_320px]">
@@ -400,16 +433,14 @@ export function AdminClientPage() {
                     placeholder="拒绝时填写原因"
                     value={rejectReasons[application.id] || ""}
                     onChange={(event) => setRejectReasons((current) => ({ ...current, [application.id]: event.target.value }))}
-                    disabled={application.status !== "pending" || isAnyReviewing}
+                    disabled={application.status !== "pending" || Boolean(reviewingAction)}
                   />
-                  <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-1">
-                    <Button type="button" variant="outline" disabled={!canReview} onClick={() => handleApplicationReview(application.id, "approve")}>
-                      {isReviewingApprove ? "处理中..." : "通过申请"}
-                    </Button>
-                    <Button type="button" variant="danger" disabled={!canReview} onClick={() => handleApplicationReview(application.id, "reject")}>
-                      {isReviewingReject ? "处理中..." : "拒绝申请"}
-                    </Button>
-                  </div>
+                  <Button type="button" variant="outline" disabled={!canReview} onClick={() => handleApplicationReview(application.id, "approve")}>
+                    {isReviewingApprove ? "处理中..." : "通过申请"}
+                  </Button>
+                  <Button type="button" variant="danger" disabled={!canReview} onClick={() => handleApplicationReview(application.id, "reject")}>
+                    {isReviewingReject ? "处理中..." : "拒绝申请"}
+                  </Button>
                 </div>
               </div>
             );
@@ -420,11 +451,11 @@ export function AdminClientPage() {
       <Card className="mt-6">
         <CardHeader>
           <CardTitle>订单管理</CardTitle>
-          <CardDescription>管理员可以查看所有订单，并取消异常订单。</CardDescription>
+          <CardDescription>管理员可查看全部订单，取消异常订单，或标记申诉中。</CardDescription>
         </CardHeader>
         <CardContent className="grid gap-4">
           <div className="flex flex-wrap gap-2">
-            {(["all", "pending", "accepted", "in_progress", "completed", "cancelled"] as Array<OrderStatus | "all">).map((status) => (
+            {orderFilters.map((status) => (
               <Button key={status} type="button" variant={orderStatusFilter === status ? "default" : "outline"} onClick={() => changeOrderStatusFilter(status)}>
                 {status === "all" ? "全部" : orderStatusText[status]}
               </Button>
@@ -435,19 +466,30 @@ export function AdminClientPage() {
             <div key={order.id} className="grid gap-3 rounded-md border border-border bg-black/30 p-4 lg:grid-cols-[1fr_auto] lg:items-center">
               <div className="grid gap-2 text-sm text-muted-foreground">
                 <div className="flex flex-wrap items-center gap-2">
-                  <p className="font-medium text-foreground">{order.id}</p>
+                  <p className="font-medium text-foreground">{order.order_no || order.id}</p>
                   <Badge tone={order.status === "completed" ? "success" : order.status === "cancelled" ? "muted" : "warning"}>{orderStatusText[order.status]}</Badge>
                 </div>
                 <p>玩家：{order.customer?.nickname || order.customer_id || order.user_id}</p>
-                <p>护航师：{order.escorts?.nickname || order.escort_id}</p>
-                <p>服务：{order.service_type} / 模式：{order.game_mode || "未填写"} / 价格：{formatMoney(order.price)}</p>
+                <p>护航师：{order.escorts?.nickname || order.escort_id || "平台推荐"}</p>
+                <p>游戏：{order.game_name || "未填写"} / 服务：{order.service_type} / 金额：{formatMoney(order.price)}</p>
+                <p>联系方式：微信 {order.contact_wechat || "未填写"} / QQ {order.contact_qq || "未填写"} / 手机 {order.contact_phone || "未填写"}</p>
                 <p>需求：{order.requirement || order.remark || "无"}</p>
               </div>
-              {order.status !== "completed" && order.status !== "cancelled" ? (
-                <Button type="button" variant="danger" disabled={updatingOrderId === order.id} onClick={() => cancelOrder(order.id)}>
-                  {updatingOrderId === order.id ? "处理中..." : "取消异常订单"}
+              <div className="flex flex-col gap-2">
+                <Button asChild variant="outline">
+                  <a href={`/orders/${order.id}`}>查看详情</a>
                 </Button>
-              ) : null}
+                {order.status !== "completed" && order.status !== "cancelled" ? (
+                  <Button type="button" variant="danger" disabled={updatingOrderId === order.id} onClick={() => cancelOrder(order.id)}>
+                    {updatingOrderId === order.id ? "处理中..." : "取消异常订单"}
+                  </Button>
+                ) : null}
+                {order.status !== "disputed" && order.status !== "cancelled" ? (
+                  <Button type="button" variant="outline" disabled={updatingOrderId === order.id} onClick={() => markOrderDisputed(order.id)}>
+                    标记申诉中
+                  </Button>
+                ) : null}
+              </div>
             </div>
           ))}
         </CardContent>
@@ -456,7 +498,7 @@ export function AdminClientPage() {
       <Card className="mt-6">
         <CardHeader>
           <CardTitle>评价管理</CardTitle>
-          <CardDescription>管理员可以隐藏违规评价，但不会删除原始记录。</CardDescription>
+          <CardDescription>管理员可以隐藏违规评价，但不删除原始记录。</CardDescription>
         </CardHeader>
         <CardContent className="grid gap-4">
           {reviews.length === 0 ? <EmptyText>暂无评价。</EmptyText> : null}
@@ -487,7 +529,7 @@ export function AdminClientPage() {
         </CardHeader>
         <CardContent className="grid gap-4">
           <div className="flex flex-wrap gap-2">
-            {(["all", "pending", "processing", "resolved", "rejected"] as Array<ReportStatus | "all">).map((status) => (
+            {reportFilters.map((status) => (
               <Button key={status} type="button" variant={reportStatusFilter === status ? "default" : "outline"} onClick={() => changeReportStatusFilter(status)}>
                 {status === "all" ? "全部" : reportStatusText[status]}
               </Button>
@@ -514,17 +556,15 @@ export function AdminClientPage() {
                   onChange={(event) => setReportNotes((current) => ({ ...current, [report.id]: event.target.value }))}
                   maxLength={500}
                 />
-                <div className="grid gap-2 sm:grid-cols-3 lg:grid-cols-1">
-                  <Button type="button" variant="outline" disabled={updatingReportId === report.id} onClick={() => updateReportStatus(report, "processing")}>
-                    标记处理中
-                  </Button>
-                  <Button type="button" variant="outline" disabled={updatingReportId === report.id} onClick={() => updateReportStatus(report, "resolved")}>
-                    标记已解决
-                  </Button>
-                  <Button type="button" variant="danger" disabled={updatingReportId === report.id} onClick={() => updateReportStatus(report, "rejected")}>
-                    驳回举报
-                  </Button>
-                </div>
+                <Button type="button" variant="outline" disabled={updatingReportId === report.id} onClick={() => updateReportStatus(report, "processing")}>
+                  标记处理中
+                </Button>
+                <Button type="button" variant="outline" disabled={updatingReportId === report.id} onClick={() => updateReportStatus(report, "resolved")}>
+                  标记已解决
+                </Button>
+                <Button type="button" variant="danger" disabled={updatingReportId === report.id} onClick={() => updateReportStatus(report, "rejected")}>
+                  驳回举报
+                </Button>
               </div>
             </div>
           ))}

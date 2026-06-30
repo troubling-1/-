@@ -56,7 +56,7 @@ export default async function EscortDetailPage({ params }: EscortDetailPageProps
                 </Link>
               </Button>
               <Button asChild size="lg" variant="outline" className="min-h-11 w-full">
-                <Link href={`/reports/new?targetType=escort&targetId=${escort.id}`}>举报</Link>
+                <Link href={`/reports/new?targetType=escort&targetId=${escort.id}&targetUserId=${escort.user_id}`}>举报</Link>
               </Button>
             </div>
           </div>

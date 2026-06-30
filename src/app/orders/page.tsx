@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { RiskAlert } from "@/components/site/risk-alert";
 import { RoleGate } from "@/components/site/role-gate";
 import { Badge } from "@/components/ui/badge";
@@ -12,28 +12,44 @@ import type { Order, OrderStatus, Review } from "@/lib/types";
 import { formatMoney } from "@/lib/utils";
 
 const statusText: Record<OrderStatus, string> = {
+  pending_payment: "待支付",
   pending: "待接单",
   accepted: "已接单",
-  in_progress: "进行中",
+  in_progress: "服务中",
+  pending_confirm: "待确认",
   completed: "已完成",
   cancelled: "已取消",
+  disputed: "申诉中",
 };
+
+const statusFilters: Array<OrderStatus | "all"> = [
+  "all",
+  "pending_payment",
+  "pending",
+  "accepted",
+  "in_progress",
+  "pending_confirm",
+  "completed",
+  "cancelled",
+  "disputed",
+];
 
 function getStatusTone(status: OrderStatus) {
   if (status === "completed") return "success";
-  if (status === "accepted" || status === "in_progress") return "warning";
   if (status === "cancelled") return "muted";
+  if (status === "pending_payment" || status === "disputed") return "warning";
   return "default";
 }
 
 function OrdersContent() {
   const [orders, setOrders] = useState<Order[]>([]);
   const [reviewedOrderIds, setReviewedOrderIds] = useState<string[]>([]);
+  const [statusFilter, setStatusFilter] = useState<OrderStatus | "all">("all");
   const [message, setMessage] = useState("");
   const [isLoading, setIsLoading] = useState(true);
   const [updatingOrderId, setUpdatingOrderId] = useState<string | null>(null);
 
-  async function loadOrders() {
+  async function loadOrders(nextStatus = statusFilter) {
     const token = await getCurrentAccessToken();
 
     if (!token) {
@@ -42,7 +58,7 @@ function OrdersContent() {
       return;
     }
 
-    const response = await fetch("/api/orders", {
+    const response = await fetch(`/api/orders?status=${nextStatus}`, {
       headers: {
         Authorization: `Bearer ${token}`,
       },
@@ -92,13 +108,19 @@ function OrdersContent() {
     loadOrders();
   }, []);
 
-  async function cancelOrder(orderId: string) {
+  async function changeFilter(status: OrderStatus | "all") {
+    setStatusFilter(status);
+    setIsLoading(true);
+    await loadOrders(status);
+  }
+
+  async function runOrderAction(orderId: string, action: "cancel" | "confirm") {
     setMessage("");
     setUpdatingOrderId(orderId);
     const token = await getCurrentAccessToken();
 
     if (!token) {
-      setMessage("请先登录后再取消订单。");
+      setMessage("请先登录后再操作订单。");
       setUpdatingOrderId(null);
       return;
     }
@@ -110,22 +132,24 @@ function OrdersContent() {
           "Content-Type": "application/json",
           Authorization: `Bearer ${token}`,
         },
-        body: JSON.stringify({ id: orderId, status: "cancelled" }),
+        body: JSON.stringify({ id: orderId, action }),
       });
       const result = await response.json();
 
       if (!response.ok) {
-        throw new Error(result.error || "取消订单失败。");
+        throw new Error(result.error || "订单操作失败。");
       }
 
-      setMessage("订单已取消。");
+      setMessage("操作成功，订单状态已更新。");
       await loadOrders();
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : "取消订单失败。");
+      setMessage(error instanceof Error ? error.message : "订单操作失败。");
     } finally {
       setUpdatingOrderId(null);
     }
   }
+
+  const totalPrice = useMemo(() => orders.reduce((sum, order) => sum + order.price, 0), [orders]);
 
   return (
     <div className="mx-auto max-w-6xl px-4 py-8 sm:py-10">
@@ -134,6 +158,20 @@ function OrdersContent() {
 
       <div className="mt-5">
         <RiskAlert />
+      </div>
+
+      <div className="mt-6 grid gap-4 md:grid-cols-3">
+        <StatCard title="当前订单" value={`${orders.length}`} />
+        <StatCard title="筛选成交额" value={formatMoney(totalPrice)} />
+        <StatCard title="已评价" value={`${reviewedOrderIds.length}`} />
+      </div>
+
+      <div className="mt-6 flex flex-wrap gap-2">
+        {statusFilters.map((status) => (
+          <Button key={status} type="button" variant={statusFilter === status ? "default" : "outline"} onClick={() => changeFilter(status)}>
+            {status === "all" ? "全部" : statusText[status]}
+          </Button>
+        ))}
       </div>
 
       {message ? <p className="mt-4 rounded-md border border-border bg-muted p-3 text-sm">{message}</p> : null}
@@ -149,30 +187,37 @@ function OrdersContent() {
             <Card key={order.id} className="border-white/10 bg-white/[0.03]">
               <CardHeader>
                 <div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-center">
-                  <CardTitle>{order.escorts?.nickname || "护航师"}</CardTitle>
+                  <CardTitle>{order.order_no || order.id}</CardTitle>
                   <Badge tone={getStatusTone(order.status)}>{statusText[order.status]}</Badge>
                 </div>
               </CardHeader>
               <CardContent className="grid gap-4 text-sm text-muted-foreground">
                 <div className="grid gap-2 md:grid-cols-3">
-                  <p>订单编号：{order.id}</p>
+                  <p>游戏：{order.game_name || "未填写"}</p>
                   <p>服务类型：{order.service_type}</p>
+                  <p>护航师：{order.escorts?.nickname || "平台推荐"}</p>
                   <p>价格：{formatMoney(order.price)}</p>
-                  <p>游戏模式：{order.game_mode || "未填写"}</p>
-                  <p>微信：{order.contact_wechat || "未填写"}</p>
-                  <p>QQ：{order.contact_qq || "未填写"}</p>
                   <p>创建时间：{new Date(order.created_at).toLocaleString("zh-CN")}</p>
+                  <p>区服：{order.server_region || "未填写"}</p>
                 </div>
                 <p>需求说明：{order.requirement || order.remark || "无"}</p>
-                <div className="flex flex-col gap-2 sm:flex-row">
-                  {order.status === "pending" ? (
-                    <Button type="button" variant="outline" disabled={updatingOrderId === order.id} onClick={() => cancelOrder(order.id)}>
+                <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap">
+                  <Button asChild variant="outline">
+                    <Link href={`/orders/${order.id}`}>查看详情</Link>
+                  </Button>
+                  {order.status === "pending_payment" ? (
+                    <Button asChild>
+                      <Link href={`/orders/pay/${order.id}`}>去支付</Link>
+                    </Button>
+                  ) : null}
+                  {order.status === "pending_payment" || order.status === "pending" ? (
+                    <Button type="button" variant="outline" disabled={updatingOrderId === order.id} onClick={() => runOrderAction(order.id, "cancel")}>
                       {updatingOrderId === order.id ? "取消中..." : "取消订单"}
                     </Button>
                   ) : null}
-                  {order.status === "accepted" || order.status === "in_progress" ? (
-                    <Button asChild variant="outline">
-                      <Link href="/chat">查看详情</Link>
+                  {order.status === "pending_confirm" ? (
+                    <Button type="button" disabled={updatingOrderId === order.id} onClick={() => runOrderAction(order.id, "confirm")}>
+                      {updatingOrderId === order.id ? "确认中..." : "确认完成"}
                     </Button>
                   ) : null}
                   {order.status === "completed" && !reviewed ? (
@@ -198,6 +243,19 @@ function OrdersContent() {
         })}
       </div>
     </div>
+  );
+}
+
+function StatCard({ title, value }: { title: string; value: string }) {
+  return (
+    <Card className="border-white/10 bg-white/[0.04]">
+      <CardHeader>
+        <CardTitle>{title}</CardTitle>
+      </CardHeader>
+      <CardContent>
+        <p className="text-2xl font-bold text-emerald-200">{value}</p>
+      </CardContent>
+    </Card>
   );
 }
 

@@ -4,11 +4,36 @@ export type UserStatus = "active" | "banned";
 
 export type EscortApplicationStatus = "pending" | "approved" | "rejected";
 
-export type OrderStatus = "pending" | "accepted" | "in_progress" | "completed" | "cancelled";
+export type EscortStatus = "active" | "disabled" | "pending";
+
+export type OrderStatus =
+  | "pending_payment"
+  | "pending"
+  | "accepted"
+  | "in_progress"
+  | "pending_confirm"
+  | "completed"
+  | "cancelled"
+  | "disputed";
+
+export type PaymentStatus = "unpaid" | "paid" | "refunded";
 
 export type WithdrawStatus = "pending" | "approved" | "rejected" | "paid";
 
-export type ServiceType = "escort" | "evacuation" | "materials" | "rank" | "fun";
+export type ServiceType =
+  | "fun_play"
+  | "rank_boost"
+  | "rank_coach"
+  | "evacuation"
+  | "materials"
+  | "task"
+  | "dungeon"
+  | "newbie"
+  | "voice"
+  | "custom"
+  | "escort"
+  | "rank"
+  | "fun";
 
 export type ReportStatus = "pending" | "processing" | "resolved" | "rejected";
 
@@ -47,11 +72,19 @@ export type EscortApplication = {
 export type Escort = {
   id: string;
   user_id: string;
+  application_id?: string | null;
   nickname: string;
   avatar: string | null;
+  game_id?: string | null;
+  contact_wechat?: string | null;
+  contact_qq?: string | null;
   rank: string;
   kd: number;
+  good_at_modes?: string[];
+  good_at_maps?: string[];
   price: number;
+  intro?: string | null;
+  status?: EscortStatus;
   bio: string;
   online_status: boolean;
   approved: boolean;
@@ -64,25 +97,39 @@ export type Escort = {
   special_maps?: string[];
   special_playstyles?: string[];
   created_at: string;
+  updated_at?: string | null;
 };
 
 export type Order = {
   id: string;
+  order_no?: string | null;
   customer_id?: string | null;
   user_id: string;
-  escort_id: string;
+  escort_id?: string | null;
+  escort_user_id?: string | null;
+  game_name?: string | null;
   service_type: ServiceType;
   game_mode?: string | null;
+  server_region?: string | null;
+  start_time?: string | null;
+  duration_hours?: number | null;
   requirement?: string | null;
+  contact_phone?: string | null;
   price: number;
+  platform_fee?: number | null;
+  escort_income?: number | null;
+  payment_status?: PaymentStatus | null;
   status: OrderStatus;
   contact_wechat?: string | null;
   contact_qq?: string | null;
   remark: string | null;
   cancel_reason?: string | null;
   cancelled_at?: string | null;
+  paid_at?: string | null;
   accepted_at?: string | null;
+  started_at?: string | null;
   completed_at?: string | null;
+  confirmed_at?: string | null;
   updated_at?: string | null;
   appointment_time?: string | null;
   created_at: string;

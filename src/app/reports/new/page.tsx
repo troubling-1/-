@@ -78,7 +78,7 @@ function NewReportContent() {
     }
   }
 
-  const defaultOrderId = searchParams.get("orderId") || searchParams.get("targetId") || "";
+  const defaultOrderId = searchParams.get("orderId") || (searchParams.get("targetType") === "order" ? searchParams.get("targetId") || "" : "");
   const defaultReviewId = searchParams.get("reviewId") || "";
   const defaultTargetUserId = searchParams.get("targetUserId") || "";
 

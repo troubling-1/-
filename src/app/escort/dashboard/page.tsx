@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { RoleGate } from "@/components/site/role-gate";
 import { Badge } from "@/components/ui/badge";
@@ -10,17 +11,20 @@ import type { Order, OrderStatus } from "@/lib/types";
 import { formatMoney } from "@/lib/utils";
 
 const statusText: Record<OrderStatus, string> = {
+  pending_payment: "待支付",
   pending: "待接单",
   accepted: "已接单",
-  in_progress: "进行中",
+  in_progress: "服务中",
+  pending_confirm: "待确认",
   completed: "已完成",
   cancelled: "已取消",
+  disputed: "申诉中",
 };
 
-const nextAction: Partial<Record<OrderStatus, { status: OrderStatus; label: string; success: string }>> = {
-  pending: { status: "accepted", label: "接单", success: "接单成功，订单已进入待服务状态。" },
-  accepted: { status: "in_progress", label: "开始服务", success: "服务已开始。" },
-  in_progress: { status: "completed", label: "完成订单", success: "订单已完成。" },
+const nextAction: Partial<Record<OrderStatus, { action: string; label: string; success: string }>> = {
+  pending: { action: "accept", label: "接单", success: "接单成功，订单已进入已接单状态。" },
+  accepted: { action: "start", label: "开始服务", success: "服务已开始。" },
+  in_progress: { action: "finish", label: "完成服务", success: "服务已提交完成，等待玩家确认。" },
 };
 
 export default function EscortDashboardPage() {
@@ -34,10 +38,12 @@ export default function EscortDashboardPage() {
 function EscortDashboardContent() {
   const [orders, setOrders] = useState<Order[]>([]);
   const [message, setMessage] = useState("");
+  const [profileError, setProfileError] = useState("");
   const [isLoading, setIsLoading] = useState(true);
   const [updatingOrderId, setUpdatingOrderId] = useState<string | null>(null);
 
   async function loadOrders() {
+    setIsLoading(true);
     const token = await getCurrentAccessToken();
 
     if (!token) {
@@ -46,10 +52,19 @@ function EscortDashboardContent() {
       return;
     }
 
+    const profileResponse = await fetch("/api/escort/profile", {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    const profileResult = await profileResponse.json();
+
+    if (!profileResponse.ok) {
+      setProfileError(profileResult.error || "护航师资料未开通或已被禁用。");
+      setIsLoading(false);
+      return;
+    }
+
     const response = await fetch("/api/orders?scope=escort", {
-      headers: {
-        Authorization: `Bearer ${token}`,
-      },
+      headers: { Authorization: `Bearer ${token}` },
     });
     const result = await response.json();
 
@@ -67,12 +82,20 @@ function EscortDashboardContent() {
     loadOrders();
   }, []);
 
+  const todayText = new Date().toLocaleDateString("zh-CN");
+  const todayOrders = useMemo(() => orders.filter((order) => new Date(order.created_at).toLocaleDateString("zh-CN") === todayText), [orders, todayText]);
   const pendingOrders = useMemo(() => orders.filter((order) => order.status === "pending"), [orders]);
-  const activeOrders = useMemo(() => orders.filter((order) => order.status === "accepted" || order.status === "in_progress"), [orders]);
+  const acceptedOrders = useMemo(() => orders.filter((order) => order.status === "accepted"), [orders]);
+  const inProgressOrders = useMemo(() => orders.filter((order) => order.status === "in_progress"), [orders]);
+  const pendingConfirmOrders = useMemo(() => orders.filter((order) => order.status === "pending_confirm"), [orders]);
   const completedOrders = useMemo(() => orders.filter((order) => order.status === "completed"), [orders]);
-  const totalIncome = completedOrders.reduce((sum, order) => sum + order.price, 0);
+  const activeOrders = acceptedOrders.length + inProgressOrders.length + pendingConfirmOrders.length;
+  const estimatedIncome = orders
+    .filter((order) => order.status !== "cancelled" && order.status !== "pending_payment")
+    .reduce((sum, order) => sum + (Number(order.escort_income) || order.price), 0);
+  const historyIncome = completedOrders.reduce((sum, order) => sum + (Number(order.escort_income) || order.price), 0);
 
-  async function updateOrderStatus(order: Order, status: OrderStatus) {
+  async function updateOrderStatus(order: Order, action: string) {
     setMessage("");
     setUpdatingOrderId(order.id);
     const token = await getCurrentAccessToken();
@@ -90,7 +113,7 @@ function EscortDashboardContent() {
           "Content-Type": "application/json",
           Authorization: `Bearer ${token}`,
         },
-        body: JSON.stringify({ id: order.id, status }),
+        body: JSON.stringify({ id: order.id, action }),
       });
       const result = await response.json();
 
@@ -107,22 +130,39 @@ function EscortDashboardContent() {
     }
   }
 
+  if (profileError) {
+    return (
+      <div className="mx-auto max-w-3xl px-4 py-10">
+        <Card className="border-amber-300/20 bg-amber-300/10">
+          <CardContent className="p-6">
+            <h1 className="text-2xl font-bold">护航师资料未开通或已被禁用</h1>
+            <p className="mt-3 text-sm leading-6 text-muted-foreground">{profileError}</p>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
+
   return (
     <div className="mx-auto max-w-7xl px-4 py-10">
       <h1 className="text-3xl font-bold">护航师后台</h1>
-      <p className="mt-2 text-sm text-muted-foreground">查看分配给你的订单，并按流程接单、开始服务、完成订单。</p>
+      <p className="mt-2 text-sm text-muted-foreground">只展示分配给你的订单，按流程接单、开始服务和提交完成。</p>
 
-      <div className="mt-6 grid gap-4 md:grid-cols-3">
-        <StatCard title="待接单" value={pendingOrders.length} />
-        <StatCard title="进行中" value={activeOrders.length} />
-        <StatCard title="已完成收入" value={formatMoney(totalIncome)} />
+      <div className="mt-6 grid gap-4 md:grid-cols-5">
+        <StatCard title="今日订单" value={`${todayOrders.length}`} />
+        <StatCard title="进行中订单" value={`${activeOrders}`} />
+        <StatCard title="已完成订单" value={`${completedOrders.length}`} />
+        <StatCard title="预计收入" value={formatMoney(estimatedIncome)} />
+        <StatCard title="历史收入" value={formatMoney(historyIncome)} />
       </div>
 
       {message ? <p className="mt-6 rounded-md border border-emerald-300/20 bg-emerald-300/10 p-3 text-sm text-emerald-100">{message}</p> : null}
       {isLoading ? <p className="mt-6 text-sm text-muted-foreground">正在加载订单...</p> : null}
 
       <OrderSection title="待接单" orders={pendingOrders} updatingOrderId={updatingOrderId} onUpdate={updateOrderStatus} />
-      <OrderSection title="进行中" orders={activeOrders} updatingOrderId={updatingOrderId} onUpdate={updateOrderStatus} />
+      <OrderSection title="已接单" orders={acceptedOrders} updatingOrderId={updatingOrderId} onUpdate={updateOrderStatus} />
+      <OrderSection title="服务中" orders={inProgressOrders} updatingOrderId={updatingOrderId} onUpdate={updateOrderStatus} />
+      <OrderSection title="待确认" orders={pendingConfirmOrders} updatingOrderId={updatingOrderId} onUpdate={updateOrderStatus} />
       <OrderSection title="已完成" orders={completedOrders} updatingOrderId={updatingOrderId} onUpdate={updateOrderStatus} />
     </div>
   );
@@ -141,7 +181,17 @@ function StatCard({ title, value }: { title: string; value: number | string }) {
   );
 }
 
-function OrderSection({ title, orders, updatingOrderId, onUpdate }: { title: string; orders: Order[]; updatingOrderId: string | null; onUpdate: (order: Order, status: OrderStatus) => void }) {
+function OrderSection({
+  title,
+  orders,
+  updatingOrderId,
+  onUpdate,
+}: {
+  title: string;
+  orders: Order[];
+  updatingOrderId: string | null;
+  onUpdate: (order: Order, action: string) => void;
+}) {
   return (
     <Card className="mt-6">
       <CardHeader>
@@ -155,19 +205,25 @@ function OrderSection({ title, orders, updatingOrderId, onUpdate }: { title: str
             <div key={order.id} className="grid gap-3 rounded-md border border-border bg-black/30 p-4 lg:grid-cols-[1fr_auto] lg:items-center">
               <div className="grid gap-2 text-sm text-muted-foreground">
                 <div className="flex flex-wrap items-center gap-2">
-                  <p className="font-medium text-foreground">{order.id}</p>
+                  <p className="font-medium text-foreground">{order.order_no || order.id}</p>
                   <Badge tone={order.status === "completed" ? "success" : "warning"}>{statusText[order.status]}</Badge>
                 </div>
-                <p>服务类型：{order.service_type} / 游戏模式：{order.game_mode || "未填写"}</p>
+                <p>游戏：{order.game_name || "未填写"} / 服务：{order.service_type}</p>
+                <p>模式：{order.game_mode || "未填写"} / 区服：{order.server_region || "未填写"}</p>
                 <p>需求：{order.requirement || order.remark || "无"}</p>
-                <p>联系方式：微信 {order.contact_wechat || "未填写"} / QQ {order.contact_qq || "未填写"}</p>
-                <p>价格：{formatMoney(order.price)}</p>
+                <p>联系方式：微信 {order.contact_wechat || "未填写"} / QQ {order.contact_qq || "未填写"} / 手机 {order.contact_phone || "未填写"}</p>
+                <p>收入：{formatMoney(Number(order.escort_income) || order.price)}</p>
               </div>
-              {action ? (
-                <Button type="button" disabled={updatingOrderId === order.id} onClick={() => onUpdate(order, action.status)}>
-                  {updatingOrderId === order.id ? "处理中..." : action.label}
+              <div className="flex flex-col gap-2">
+                <Button asChild variant="outline">
+                  <Link href={`/orders/${order.id}`}>查看详情</Link>
                 </Button>
-              ) : null}
+                {action ? (
+                  <Button type="button" disabled={updatingOrderId === order.id} onClick={() => onUpdate(order, action.action)}>
+                    {updatingOrderId === order.id ? "处理中..." : action.label}
+                  </Button>
+                ) : null}
+              </div>
             </div>
           );
         })}

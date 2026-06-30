@@ -9,7 +9,7 @@ function normalizeTags(value: unknown) {
 
   if (typeof value === "string") {
     return value
-      .split(/[，,\n]/)
+      .split(/[，,、\n]/)
       .map((item) => item.trim())
       .filter(Boolean);
   }
@@ -18,9 +18,7 @@ function normalizeTags(value: unknown) {
 }
 
 function normalizeApplication<T extends Record<string, unknown> | null>(application: T) {
-  if (!application) {
-    return null;
-  }
+  if (!application) return null;
 
   return {
     ...application,
@@ -28,6 +26,18 @@ function normalizeApplication<T extends Record<string, unknown> | null>(applicat
     price: Number(application.price) || 0,
     good_at_modes: normalizeTags(application.good_at_modes),
     good_at_maps: normalizeTags(application.good_at_maps),
+  };
+}
+
+function normalizeEscort<T extends Record<string, unknown> | null>(escort: T) {
+  if (!escort) return null;
+
+  return {
+    ...escort,
+    kd: Number(escort.kd) || 0,
+    price: Number(escort.price) || 0,
+    good_at_modes: normalizeTags(escort.good_at_modes),
+    good_at_maps: normalizeTags(escort.good_at_maps),
   };
 }
 
@@ -44,16 +54,28 @@ export async function GET(request: Request) {
     return NextResponse.json({ error: "Supabase 服务端环境变量未配置。" }, { status: 500 });
   }
 
-  const { data, error } = await supabase
+  const { data: applications, error: applicationsError } = await supabase
     .from("escort_applications")
     .select("*")
     .order("created_at", { ascending: false });
 
-  if (error) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+  if (applicationsError) {
+    return NextResponse.json({ error: applicationsError.message }, { status: 500 });
   }
 
-  return NextResponse.json({ data: (data || []).map((item) => normalizeApplication(item)) });
+  const { data: escorts, error: escortsError } = await supabase
+    .from("escorts")
+    .select("*")
+    .order("updated_at", { ascending: false });
+
+  if (escortsError) {
+    return NextResponse.json({ error: escortsError.message }, { status: 500 });
+  }
+
+  return NextResponse.json({
+    data: (applications || []).map((item) => normalizeApplication(item)),
+    escorts: (escorts || []).map((item) => normalizeEscort(item)),
+  });
 }
 
 export async function PATCH(request: Request) {
@@ -109,43 +131,88 @@ export async function PATCH(request: Request) {
         return NextResponse.json({ error: error.message }, { status: 500 });
       }
 
+      const { data: approvedApplication, error: approvedError } = await supabase
+        .from("escort_applications")
+        .select("id")
+        .eq("user_id", application.user_id)
+        .eq("status", "approved")
+        .maybeSingle();
+
+      if (approvedError) {
+        return NextResponse.json({ error: approvedError.message }, { status: 500 });
+      }
+
+      if (!approvedApplication) {
+        const { error: roleError } = await supabase.from("users").update({ role: "customer" }).eq("id", application.user_id);
+
+        if (roleError) {
+          return NextResponse.json({ error: roleError.message }, { status: 500 });
+        }
+
+        const { error: escortError } = await supabase
+          .from("escorts")
+          .update({ status: "disabled", approved: false })
+          .eq("user_id", application.user_id);
+
+        if (escortError) {
+          return NextResponse.json({ error: escortError.message }, { status: 500 });
+        }
+      }
+
       return NextResponse.json({ data: normalizeApplication(data) });
     }
 
-    const { error: approveError } = await supabase
+    const { data: approvedApplication, error: approveError } = await supabase
       .from("escort_applications")
       .update({ status: "approved", reject_reason: null })
-      .eq("id", applicationId);
+      .eq("id", applicationId)
+      .select("*")
+      .single();
 
     if (approveError) {
       return NextResponse.json({ error: approveError.message }, { status: 500 });
     }
 
-    const { error: roleError } = await supabase.from("users").update({ role: "escort" }).eq("id", application.user_id);
+    const { error: roleError } = await supabase
+      .from("users")
+      .update({ role: "escort", status: "active" })
+      .eq("id", application.user_id);
 
     if (roleError) {
       return NextResponse.json({ error: roleError.message }, { status: 500 });
     }
 
-    const { error: escortError } = await supabase.from("escorts").upsert(
-      {
-        user_id: application.user_id,
-        nickname: application.nickname,
-        rank: application.rank,
-        kd: application.kd,
-        price: application.price,
-        bio: application.intro,
-        approved: true,
-        online_status: false,
-      },
-      { onConflict: "user_id" },
-    );
+    const { data: escort, error: escortError } = await supabase
+      .from("escorts")
+      .upsert(
+        {
+          user_id: application.user_id,
+          application_id: application.id,
+          nickname: application.nickname,
+          game_id: application.game_id,
+          contact_wechat: application.contact_wechat,
+          contact_qq: application.contact_qq,
+          rank: application.rank,
+          kd: application.kd,
+          good_at_modes: normalizeTags(application.good_at_modes),
+          good_at_maps: normalizeTags(application.good_at_maps),
+          price: application.price,
+          intro: application.intro,
+          bio: application.intro,
+          status: "active",
+          approved: true,
+          online_status: false,
+        },
+        { onConflict: "user_id" },
+      )
+      .select("*")
+      .single();
 
     if (escortError) {
       return NextResponse.json({ error: escortError.message }, { status: 500 });
     }
 
-    return NextResponse.json({ data: { id: applicationId, status: "approved" } });
+    return NextResponse.json({ data: normalizeApplication(approvedApplication), escort: normalizeEscort(escort) });
   } catch (error) {
     return NextResponse.json({ error: error instanceof Error ? error.message : "审核申请失败。" }, { status: 500 });
   }
