@@ -77,7 +77,7 @@ function canCancel(status: string) {
 }
 
 function getSelectFields() {
-  return "*, escorts(id,user_id,nickname,price,status), customer:customer_id(id,nickname,email)";
+  return "*, escorts(id,user_id,nickname,price,status,approved), customer:customer_id(id,nickname,email)";
 }
 
 export async function GET(request: Request) {
@@ -230,7 +230,7 @@ export async function POST(request: Request) {
     }
 
     const price = Math.max(1, Number((unitPrice * durationHours).toFixed(2)));
-    const platformFee = Number((price * 0.12).toFixed(2));
+    const platformFee = Number((price * 0.2).toFixed(2));
     const escortIncome = Number((price - platformFee).toFixed(2));
 
     const { data, error } = await supabase
@@ -299,6 +299,14 @@ export async function PATCH(request: Request) {
       return NextResponse.json({ error: "订单操作不正确。" }, { status: 400 });
     }
 
+    if (action === "pay") {
+      return NextResponse.json({ error: "订单支付必须使用余额支付接口。" }, { status: 400 });
+    }
+
+    if (action === "confirm") {
+      return NextResponse.json({ error: "订单确认完成必须使用结算接口。" }, { status: 400 });
+    }
+
     const { data: order, error: orderError } = await supabase
       .from("orders")
       .select("*, escorts(id,user_id,nickname,price,status,approved)")
@@ -326,18 +334,6 @@ export async function PATCH(request: Request) {
     const isAdmin = profile.role === "admin";
     const now = new Date().toISOString();
     const updatePayload: Record<string, string | null> = {};
-
-    if (action === "pay") {
-      if (!isCustomer && !isAdmin) {
-        return NextResponse.json({ error: "只有下单用户可以确认模拟支付。" }, { status: 403 });
-      }
-      if (orderRecord.status !== "pending_payment") {
-        return NextResponse.json({ error: "只有待支付订单可以确认支付。" }, { status: 400 });
-      }
-      updatePayload.status = "pending";
-      updatePayload.payment_status = "paid";
-      updatePayload.paid_at = now;
-    }
 
     if (action === "cancel") {
       if (!isCustomer && !isAdmin) {
@@ -385,17 +381,6 @@ export async function PATCH(request: Request) {
       }
       updatePayload.status = "pending_confirm";
       updatePayload.completed_at = now;
-    }
-
-    if (action === "confirm") {
-      if (!isCustomer && !isAdmin) {
-        return NextResponse.json({ error: "只有下单用户可以确认完成。" }, { status: 403 });
-      }
-      if (orderRecord.status !== "pending_confirm") {
-        return NextResponse.json({ error: "只有待确认订单可以确认完成。" }, { status: 400 });
-      }
-      updatePayload.status = "completed";
-      updatePayload.confirmed_at = now;
     }
 
     if (action === "dispute") {

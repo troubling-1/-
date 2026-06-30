@@ -98,13 +98,13 @@ function OrderDetailContent() {
     }
 
     try {
-      const response = await fetch("/api/orders", {
-        method: "PATCH",
+      const response = await fetch(action === "confirm" ? "/api/orders/confirm" : "/api/orders", {
+        method: action === "confirm" ? "POST" : "PATCH",
         headers: {
           "Content-Type": "application/json",
           Authorization: `Bearer ${token}`,
         },
-        body: JSON.stringify({ id: orderId, action }),
+        body: JSON.stringify(action === "confirm" ? { order_id: orderId } : { id: orderId, action }),
       });
       const result = await response.json();
 

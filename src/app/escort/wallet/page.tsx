@@ -10,29 +10,15 @@ import { getCurrentAccessToken } from "@/lib/auth-client";
 import type { Wallet, WalletTransaction } from "@/lib/types";
 import { formatMoney } from "@/lib/utils";
 
-const transactionText: Record<string, string> = {
-  recharge: "充值",
-  payment: "支付",
-  freeze: "冻结",
-  unfreeze: "解冻",
-  refund: "退款",
-  income: "收入",
-  platform_fee: "平台服务费",
-  withdraw_apply: "提现申请",
-  withdraw_success: "提现打款",
-  withdraw_reject: "提现退回",
-  adjustment: "调整",
-};
-
-export default function CenterWalletPage() {
+export default function EscortWalletPage() {
   return (
-    <RoleGate allowedRoles={["customer", "escort", "admin"]}>
-      <WalletContent />
+    <RoleGate allowedRoles={["escort"]}>
+      <EscortWalletContent />
     </RoleGate>
   );
 }
 
-function WalletContent() {
+function EscortWalletContent() {
   const [wallet, setWallet] = useState<Wallet | null>(null);
   const [transactions, setTransactions] = useState<WalletTransaction[]>([]);
   const [message, setMessage] = useState("");
@@ -42,7 +28,7 @@ function WalletContent() {
     const token = await getCurrentAccessToken();
 
     if (!token) {
-      setMessage("请先登录后查看钱包。");
+      setMessage("请先登录护航师账号。");
       setIsLoading(false);
       return;
     }
@@ -75,18 +61,13 @@ function WalletContent() {
     <div className="mx-auto max-w-6xl px-4 py-10">
       <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-end">
         <div>
-          <p className="text-sm text-primary">资金中心</p>
-          <h1 className="mt-2 text-3xl font-bold">我的钱包</h1>
-          <p className="mt-2 text-sm text-muted-foreground">余额、冻结资金、充值和消费流水统一在这里查看。</p>
+          <p className="text-sm text-primary">护航师资金</p>
+          <h1 className="mt-2 text-3xl font-bold">护航师钱包</h1>
+          <p className="mt-2 text-sm text-muted-foreground">查看订单收入、提现中金额和已提现记录。</p>
         </div>
-        <div className="flex flex-col gap-2 sm:flex-row">
-          <Button asChild>
-            <Link href="/wallet/recharge">模拟充值</Link>
-          </Button>
-          <Button asChild variant="outline">
-            <Link href="/center">返回用户中心</Link>
-          </Button>
-        </div>
+        <Button asChild>
+          <Link href="/escort/withdraw">申请提现</Link>
+        </Button>
       </div>
 
       {message ? <p className="mt-5 rounded-md border border-border bg-muted p-3 text-sm">{message}</p> : null}
@@ -94,10 +75,10 @@ function WalletContent() {
 
       <div className="mt-6 grid gap-4 md:grid-cols-5">
         <StatCard title="可用余额" value={formatMoney(wallet?.balance || 0)} />
-        <StatCard title="冻结金额" value={formatMoney(wallet?.frozen_balance || 0)} />
-        <StatCard title="累计充值" value={formatMoney(wallet?.total_recharge || 0)} />
-        <StatCard title="累计消费" value={formatMoney(wallet?.total_spent || 0)} />
-        <StatCard title="退款金额" value={formatMoney(0)} />
+        <StatCard title="累计收入" value={formatMoney(wallet?.total_income || 0)} />
+        <StatCard title="可提现余额" value={formatMoney(wallet?.balance || 0)} />
+        <StatCard title="提现中" value={formatMoney(wallet?.pending_withdraw || 0)} />
+        <StatCard title="已提现" value={formatMoney(wallet?.total_withdrawn || 0)} />
       </div>
 
       <Card className="mt-6 border-white/10 bg-white/[0.04]">
@@ -110,10 +91,9 @@ function WalletContent() {
             <div key={item.id} className="grid gap-2 rounded-md border border-white/10 bg-black/30 p-4 text-sm sm:grid-cols-[1fr_auto] sm:items-center">
               <div>
                 <div className="flex flex-wrap items-center gap-2">
-                  <p className="font-medium">{transactionText[item.type] || item.type}</p>
+                  <p className="font-medium">{item.description || item.type}</p>
                   <Badge tone={item.status === "success" ? "success" : item.status === "pending" ? "warning" : "muted"}>{item.status}</Badge>
                 </div>
-                <p className="mt-1 text-muted-foreground">{item.description || "无备注"}</p>
                 <p className="mt-1 text-xs text-muted-foreground">{new Date(item.created_at).toLocaleString("zh-CN")}</p>
               </div>
               <p className="text-lg font-bold text-emerald-200">{formatMoney(item.amount)}</p>

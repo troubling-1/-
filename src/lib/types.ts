@@ -18,7 +18,26 @@ export type OrderStatus =
 
 export type PaymentStatus = "unpaid" | "paid" | "refunded";
 
-export type WithdrawStatus = "pending" | "approved" | "rejected" | "paid";
+export type WalletRole = "customer" | "escort" | "admin";
+
+export type WalletTransactionType =
+  | "recharge"
+  | "payment"
+  | "freeze"
+  | "unfreeze"
+  | "refund"
+  | "income"
+  | "platform_fee"
+  | "withdraw_apply"
+  | "withdraw_success"
+  | "withdraw_reject"
+  | "adjustment";
+
+export type WalletTransactionStatus = "pending" | "success" | "failed" | "cancelled";
+
+export type WithdrawMethod = "wechat" | "alipay" | "bank";
+
+export type WithdrawStatus = "pending" | "approved" | "rejected" | "paid" | "cancelled";
 
 export type ServiceType =
   | "fun_play"
@@ -182,9 +201,49 @@ export type Report = {
 
 export type Withdraw = {
   id: string;
-  escort_id: string;
+  escort_id?: string | null;
+  user_id?: string | null;
   amount: number;
+  method?: WithdrawMethod | null;
+  account_name?: string | null;
+  account_no?: string | null;
   status: WithdrawStatus;
+  admin_note?: string | null;
+  reject_reason?: string | null;
+  paid_at?: string | null;
+  reviewed_at?: string | null;
+  updated_at?: string | null;
+  created_at: string;
+};
+
+export type Wallet = {
+  id: string;
+  user_id: string;
+  escort_id?: string | null;
+  balance: number;
+  frozen_balance: number;
+  total_recharge: number;
+  total_spent: number;
+  total_income: number;
+  total_withdrawn: number;
+  pending_withdraw: number;
+  role: WalletRole;
+  created_at: string;
+  updated_at?: string | null;
+};
+
+export type WalletTransaction = {
+  id: string;
+  user_id: string;
+  wallet_id: string;
+  order_id?: string | null;
+  withdraw_id?: string | null;
+  type: WalletTransactionType;
+  amount: number;
+  balance_before: number;
+  balance_after: number;
+  status: WalletTransactionStatus;
+  description?: string | null;
   created_at: string;
 };
 
